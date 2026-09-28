@@ -3,9 +3,11 @@ import { chordName, keyName, ROOTS, BASIC_SUFFIX, cidBase, basicOf } from '../th
 import { getState, update, isFav, toggleFav } from '../store.js';
 import { h, esc, icon, openSheet, toast } from '../ui.js';
 import { app } from '../app.js';
+import { importFromClipboard } from '../importer.js';
 
 const ROW = 74;
-let el, listEl, f, results = [], scroller;
+let el, listEl, f, results = [], scope = 'all';
+export function setScope(sc) { scope = sc; if (el) refresh(true); }
 const DIFF = ['', 'קל', 'בינוני', 'מתקדם'];
 const DIFF_CLS = ['', 'easy', 'mid', 'hard'];
 
@@ -34,10 +36,11 @@ export function mount(root) {
   const heCount = SONGS.filter((s) => s.lang === 0).length;
   el.innerHTML = `
     <div class="vhead"><div><h1>שירים</h1><div class="sub">${SONGS.length.toLocaleString('he-IL')} שירים · ${timedCount.toLocaleString('he-IL')} מסונכרנים להקלטה · ${heCount} בעברית</div></div>
-      <div style="display:flex;gap:8px"><button class="iconbtn" id="sg-add" aria-label="הוספת שיר">${icon('plus')}</button>
+      <div style="display:flex;gap:8px"><button class="iconbtn" id="sg-paste" aria-label="ייבוא מהלוח">${icon('paste')}</button><button class="iconbtn" id="sg-add" aria-label="הוספת שיר">${icon('plus')}</button>
       <button class="iconbtn" id="sg-filter" aria-label="סינון">${icon('filter')}<span class="badge" id="sg-badge" hidden></span></button></div></div>
     <div id="sg-resume"></div>
     <div class="search">${icon('search')}<input id="sg-q" type="search" placeholder="שם שיר, אמן או אקורדים (Am F C G)" autocomplete="off"><button class="clear" id="sg-qx" hidden aria-label="נקה">${icon('close')}</button></div>
+    <div class="scope" id="sg-scope"><button data-sc="all">כל השירים</button><button data-sc="fav">${icon('star')} מועדפים</button><button data-sc="recent">${icon('clock')} אחרונים</button><button data-sc="mine">השירים שלי</button></div>
     <div class="seg" id="sg-lang" style="margin-top:10px"><button data-l="all">הכל</button><button data-l="0">עברית</button><button data-l="1">אנגלית</button><button data-l="2">אחר</button></div>
     <div class="chips" id="sg-quick" style="margin-top:10px">
       <button class="chip" data-q="canplay">${icon('hand')} מה אני יכול לנגן</button>
@@ -56,11 +59,13 @@ export function mount(root) {
   q.addEventListener('input', () => { qx.hidden = !q.value; clearTimeout(qt); qt = setTimeout(() => { f.q = q.value; refresh(true); }, 140); });
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') q.blur(); });
   qx.addEventListener('click', () => { q.value = ''; qx.hidden = true; f.q = ''; refresh(true); });
+  el.querySelector('#sg-scope').addEventListener('click', (e) => { const b = e.target.closest('[data-sc]'); if (b) setScope(b.dataset.sc); });
   el.querySelector('#sg-lang').addEventListener('click', (e) => { const b = e.target.closest('[data-l]'); if (!b) return; f.lang = b.dataset.l === 'all' ? 'all' : +b.dataset.l; refresh(true); });
   el.querySelector('#sg-quick').addEventListener('click', onQuick);
   el.querySelector('#sg-sort').addEventListener('change', (e) => { f.sort = e.target.value; refresh(true); });
   el.querySelector('#sg-filter').addEventListener('click', openFilters);
   el.querySelector('#sg-add').addEventListener('click', () => app.openEditor(null));
+  el.querySelector('#sg-paste').addEventListener('click', importFromClipboard);
   listEl.addEventListener('click', onListClick);
   window.addEventListener('scroll', () => { if (el.offsetParent !== null) requestAnimationFrame(paint); }, { passive: true });
   window.addEventListener('resize', paint);
@@ -134,6 +139,11 @@ function syncUI() {
 export function refresh(resetScroll) {
   if (!el) return;
   results = filterSongs(f);
+  const st = getState();
+  if (scope === 'fav') results = results.filter((r) => st.favorites[r.s.k]).sort((a, b) => st.favorites[b.s.k] - st.favorites[a.s.k]);
+  else if (scope === 'recent') { const order = new Map(st.recent.map((k, i) => [k, i])); results = results.filter((r) => order.has(r.s.k)).sort((a, b) => order.get(a.s.k) - order.get(b.s.k)); }
+  else if (scope === 'mine') results = results.filter((r) => r.s.mine);
+  el.querySelectorAll('#sg-scope [data-sc]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sc === scope)));
   syncUI();
   el.querySelector('#sg-count').textContent = `${results.length.toLocaleString('he-IL')} שירים`;
   listEl.style.height = `${Math.max(1, results.length) * ROW}px`;
@@ -149,7 +159,10 @@ let lastRange = '';
 function paint() {
   if (!listEl) return;
   if (!results.length) {
-    listEl.innerHTML = `<div class="empty"><b>לא נמצאו שירים</b>נסו להסיר חלק מהמסננים${f.chordMode === 'only' ? ', או להוסיף עוד אקורדים לבחירה' : ''}.</div>`;
+    listEl.innerHTML = scope === 'fav' ? '<div class="empty"><b>עוד אין מועדפים</b>לחצו על הכוכב ליד שיר כדי לשמור אותו כאן.</div>'
+      : scope === 'recent' ? '<div class="empty"><b>עוד לא ניגנתם שירים</b>שירים שתפתחו יופיעו כאן.</div>'
+      : scope === 'mine' ? '<div class="empty"><b>עוד אין שירים שלכם</b>לחצו ״ייבוא מהלוח״ או + כדי להוסיף שיר.</div>'
+      : `<div class="empty"><b>לא נמצאו שירים</b>נסו להסיר חלק מהמסננים${f.chordMode === 'only' ? ', או להוסיף עוד אקורדים לבחירה' : ''}.</div>`;
     listEl.style.height = 'auto';
     return;
   }

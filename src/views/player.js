@@ -11,6 +11,7 @@ import { loadYT, parseYouTubeId, ytSearchUrl, YTClock } from '../yt.js';
 import { findVideos } from '../ytlookup.js';
 import { fetchSyncedLyrics } from '../lyrics.js';
 import { app } from '../app.js';
+import { startMic, stopMic, matchChord, resetChroma, micSupported } from '../mic.js';
 
 const PPS = 104; // lane pixels per song-second
 const STYLES = { strum: 'סטרום', arp: 'פריטה', hit: 'אקורד לתיבה', off: 'ללא' };
@@ -51,6 +52,7 @@ export async function openPlayer(song) {
     playing: false, songT0: 0, ctxT0: 0, t: 0, rate: pref.tempo, schedIdx: 0, loop: null, raf: 0, timer: 0,
     ytc: null, ytReady: false, ytCands: [], ytIdx: 0, practiced: 0, lastTick: 0, curEv: -2, curBar: -1, curLine: -1,
     countUntil: -1, wake: null, taps: [], userScrollUntil: 0, lyricsState: 'none', closed: false,
+    listen: { on: false, stats: new Map(), judged: new Map(), lastAt: 0, ema: 0, lastIdx: -1 },
   };
   let ev = model.events;
   let lines = [];
@@ -69,11 +71,12 @@ export async function openPlayer(song) {
   // ------------------------------------------------------------ layout
   sc.body.innerHTML = `
     <div class="pl-src"><div class="seg" id="pl-mode"><button data-mode="synth">${icon('guitar')} ליווי מובנה</button><button data-mode="yt">${icon('yt')} השיר המקורי</button></div>
+      <button class="iconbtn sm" id="pl-mic" aria-label="האזנה לנגינה" aria-pressed="false">${icon('mic')}</button>
       <button class="iconbtn sm" id="pl-view" aria-label="החלפת תצוגה"></button></div>
     <div id="pl-yt" hidden></div>
     <div class="pl-boxes" id="pl-boxes"></div>
     <div class="pl-stage" id="pl-stage"></div>
-    <div class="pl-info"><div class="beatdots" id="pl-dots"></div><div class="next" id="pl-next"></div><div class="strum" id="pl-strum"></div></div>
+    <div class="pl-info"><span class="lis" id="pl-lis" hidden></span><div class="beatdots" id="pl-dots"></div><div class="next" id="pl-next"></div><div class="strum" id="pl-strum"></div></div>
     <div class="pl-controls">
       <div class="scrub"><span id="pl-t" class="num">0:00</span><input type="range" id="pl-seek" min="0" max="${Math.ceil(model.dur)}" step="0.1" value="0" aria-label="מיקום בשיר"><span id="pl-d" class="num">${fmtTime(model.dur)}</span></div>
       <div class="transport">
@@ -369,6 +372,7 @@ export async function openPlayer(song) {
     try { if (navigator.wakeLock) S.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* not allowed */ }
   }
   function pause() {
+    if (S.listen.on) { finalizeEvent(S.listen.lastIdx); const a = accuracy(); if (a != null && isPlaying()) toast(`דיוק עד עכשיו: ${a}% מהאקורדים`); }
     if (pref.mode === 'yt') { S.ytc && S.ytc.pause(); return; }
     if (!S.playing) return;
     S.t = Math.max(0, curTime());
@@ -497,6 +501,8 @@ export async function openPlayer(song) {
       }
       if (bi >= 0 && gridCells[bi]) gridCells[bi].querySelector('.fillbar').style.width = `${(100 * (tt - bars[bi].a) / (bars[bi].b - bars[bi].a)).toFixed(1)}%`;
     }
+    // listening feedback
+    if (S.listen.on && playing) listenTick(tt, i);
     // chord boxes + next
     if (i !== S.curEv || force) {
       S.curEv = i;
@@ -532,6 +538,58 @@ export async function openPlayer(song) {
       const sk = $('#pl-seek'); if (!sk.matches(':active')) sk.value = tt.toFixed(1);
       pref.lastT = tt;
     }
+  }
+
+  // ------------------------------------------------------------ listening (microphone)
+  function listenTick(tt, i) {
+    const L = S.listen, now = performance.now();
+    if (i !== L.lastIdx) { finalizeEvent(L.lastIdx); L.lastIdx = i; L.ema = 0; }
+    if (now - L.lastAt < 90) return;
+    L.lastAt = now;
+    const e = ev[i];
+    const lis = $('#pl-lis');
+    if (!e || e.c < 0 || tt - e.t < 0.3) return;
+    const m = matchChord(disp(e.c));
+    if (!m) return;
+    const box = boxEls.get(nameOf(e.c));
+    if (m.silent) { lis.className = 'lis idle'; lis.textContent = '🎤'; return; }
+    const st = L.stats.get(i) || { a: 0, m: 0 };
+    st.a++; if (m.ok) st.m++;
+    L.stats.set(i, st);
+    L.ema = L.ema * 0.6 + (m.ok ? 1 : 0) * 0.4;
+    const good = L.ema >= 0.5;
+    lis.className = 'lis ' + (good ? 'good' : 'bad');
+    lis.textContent = good ? '✓' : `✗ ${chordName(m.best)}`;
+    boxEls.forEach((b) => b.classList.remove('hit', 'miss'));
+    if (box) box.classList.add(good ? 'hit' : 'miss');
+  }
+  function finalizeEvent(idx) {
+    const st = S.listen.stats.get(idx);
+    if (!st || st.a < 3) return;
+    const ok = st.m / st.a >= 0.5;
+    S.listen.judged.set(idx, ok);
+    const chip = S.chipEls && S.chipEls.get(idx);
+    if (chip) chip.classList.add(ok ? 'ok' : 'bad');
+  }
+  function accuracy() {
+    const j = [...S.listen.judged.values()];
+    return j.length >= 4 ? Math.round((100 * j.filter(Boolean).length) / j.length) : null;
+  }
+  async function toggleListen() {
+    const L = S.listen;
+    if (L.on) {
+      L.on = false; stopMic(); $('#pl-mic').setAttribute('aria-pressed', 'false'); $('#pl-lis').hidden = true;
+      boxEls.forEach((b) => b.classList.remove('hit', 'miss'));
+      const a = accuracy(); if (a != null) toast(`דיוק: ${a}% מהאקורדים`);
+      return;
+    }
+    if (!micSupported()) { toast('המכשיר לא מאפשר גישה למיקרופון'); return; }
+    try { await startMic({ echo: true }); } catch (e) { toast('אין גישה למיקרופון. אפשרו גישה בהגדרות ספארי ← מיקרופון'); return; }
+    resetChroma();
+    L.on = true; L.stats = new Map(); L.judged = new Map(); L.lastIdx = -1;
+    $('#pl-mic').setAttribute('aria-pressed', 'true');
+    const lis = $('#pl-lis'); lis.hidden = false; lis.className = 'lis idle'; lis.textContent = '🎤';
+    toast(pref.mode === 'yt' || getState().settings.sound !== 'off' ? 'מקשיב לנגינה שלך — עם אוזניות זה הכי מדויק' : 'מקשיב לנגינה שלך');
   }
 
   // ------------------------------------------------------------ loop
@@ -637,6 +695,7 @@ export async function openPlayer(song) {
   $('#pl-loop').addEventListener('click', toggleLoop);
   $('#pl-metro').addEventListener('click', () => { update((s) => { s.settings.metronome = !s.settings.metronome; }); setLabel(); toast(getState().settings.metronome ? 'מטרונום פועל' : 'מטרונום כבוי'); });
   $('#pl-set').addEventListener('click', openSettings);
+  $('#pl-mic').addEventListener('click', toggleListen);
   $('#pl-seek').addEventListener('input', (e) => { S.t = +e.target.value; if (!isPlaying()) frame(true); });
   $('#pl-seek').addEventListener('change', (e) => seek(+e.target.value));
   $('#pl-view').addEventListener('click', () => {
@@ -807,7 +866,9 @@ export async function openPlayer(song) {
     document.removeEventListener('visibilitychange', onVis);
     releaseWake();
     update((s) => { s.lastSong = { k: song.k, t: Math.round(pref.lastT || 0), at: Date.now() }; });
-    logPlay(song.k, S.practiced, pref.mode);
+    const acc = S.listen.on ? accuracy() : null;
+    if (S.listen.on) stopMic();
+    logPlay(song.k, S.practiced, pref.mode, acc);
     app.refresh();
   }
 

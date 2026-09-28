@@ -7,7 +7,7 @@
 1. בענן: `git clone https://github.com/barbiv/sarig` (הריפו ציבורי, clone עובד בלי הרשאות).
 2. לשינויי נתונים — לשכפל את המאגרים ל-`raw/` (ראו README) ולהריץ `build/build_data.py` / `build/build_chords.py`.
 3. `./build/build.sh` (מעדכן גרסה ב-index.html וב-sw.js, כך שהאייפון מקבל את העדכון).
-4. בדיקה: `cd docs && python3 -m http.server 8765` ואז `python3 build/smoke.py` + `build/smoke2.py` (צילומי מסך למסך אייפון).
+4. בדיקה: `cd docs && python3 -m http.server 8765` ואז `python3 build/smoke3.py` (אייפון 15 פרו) + בדיקות המיקרופון והסימנייה.
 5. commit, ואז `git bundle create sarig-<מספר>.bundle main` (שם קובץ חדש בכל פעם — דריסה של קובץ קיים לא תמיד מתעדכנת במחשב), להעביר למחשב של בר
    לתיקייה `~/Documents/Sarig Guitar App/.gh-auth/`, ומשם ב-device_bash:
    `export GH_TOKEN=$(cat ".../.gh-auth/token")`, `git clone https://github.com/barbiv/sarig repo`,
@@ -24,6 +24,13 @@
 - `docs/data/yt.json` נבנה ע"י GitHub Action `youtube.yml` (yt-dlp, מתוך GitHub Actions — לסביבות של Claude אין גישה ליוטיוב). הרצה: `gh workflow run youtube.yml -f limit=2600 -f minutes=300`.
 - מילים מסונכרנות: LRCLIB, נטענות בזמן ריצה במכשיר ונשמרות רק שם. לא לשמור מילים בריפו.
 - חיפוש חי של סרטונים: Piped API (api.piped.private.coffee). `diag.yml` בודק זמינות שירותים וכותב ל-`build/diag.txt`.
+
+## מיקרופון (כוונן והאזנה)
+- `src/mic.js`: McLeod pitch לכוונן, כרומה + תבניות הרמוניות לזיהוי אקורדים (`matchChord`, `whichChord`).
+- בדיקות עם מיקרופון מדומה: `build/mictest.py`, `mictest2.py`, `mictest3.py` (קבצי WAV סינתטיים — ראו הסקריפטים; Chromium עם `--use-file-for-fake-audio-capture`).
+
+## ייבוא שירים
+- אין משיכה אוטומטית מאתרי אקורדים. הייבוא: סימנייה לספארי (`src/tools/bookmarklet.js`, נבנית ל-`src/bookmarklet_url.js`) + ״ייבוא מהלוח״ (`src/importer.js`). בדיקה: `build/bmtest.py`.
 
 ## עקרונות
 - ממשק בעברית RTL; שמות אקורדים LTR. נתוני המשתמש נשמרים מקומית (IndexedDB + localStorage) — לא לשבור את מבנה ה-state ב-`src/store.js` (להוסיף שדות, לא לשנות קיימים). מפתחות שירים יציבים (`db:<hash>`) — לא לשנות את `stable_key`.

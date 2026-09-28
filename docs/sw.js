@@ -1,4 +1,4 @@
-const V = '202609282300';
+const V = '202609282319';
 const SHELL = 'sarig-shell-' + V;
 const DATA = 'sarig-data-v1';
 const FONTS = 'sarig-fonts-v1';

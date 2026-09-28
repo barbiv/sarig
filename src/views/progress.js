@@ -26,6 +26,7 @@ function streak(m) {
   return n;
 }
 
+function accOf(k) { const p = getState().plays.filter((x) => x.k === k && x.acc != null); return p.length ? p[p.length - 1].acc : null; }
 async function render() {
   if (!el) return;
   const st = getState();
@@ -75,7 +76,7 @@ async function render() {
     <div class="rows">${exs.length ? exs.slice(0, 8).map((x) => `<button class="row" data-ex="${esc(x.ex.id)}"><span class="grow"><span class="t ltr">${esc(exName(x.ex))}</span><br><span class="d">${x.n} אימונים · ${relDay(x.last)}</span></span>
       <span style="text-align:center"><b class="num" style="font-size:22px">${Math.round(x.best)}</b><br><span class="d" style="color:${x.imp > 0 ? 'var(--good)' : x.imp < 0 ? 'var(--bad)' : 'var(--muted)'}">${x.imp > 0 ? '+' : ''}${x.imp}%</span></span></button>`).join('')
       : '<div class="row"><span class="note">עוד לא התאמנתם — התחילו תרגיל בלשונית ״אימון״.</span></div>'}</div>
-    ${topSongs.length ? `<div class="section-t">השירים שניגנתם הכי הרבה</div><div class="rows">${topSongs.map((x) => `<button class="row" data-song="${esc(x.s.k)}"><span class="grow"><span class="t">${esc(x.s.t)}</span><br><span class="d">${esc(x.s.a)}</span></span><span class="num" style="font-size:18px">${fmtMin(x.sec)}</span></button>`).join('')}</div>` : ''}
+    ${topSongs.length ? `<div class="section-t">השירים שניגנתם הכי הרבה</div><div class="rows">${topSongs.map((x) => `<button class="row" data-song="${esc(x.s.k)}"><span class="grow"><span class="t">${esc(x.s.t)}</span><br><span class="d">${esc(x.s.a)}</span></span><span style="text-align:center"><span class="num" style="font-size:18px">${fmtMin(x.sec)}</span>${accOf(x.s.k) != null ? `<br><span class="d" style="color:var(--good)">דיוק ${accOf(x.s.k)}%</span>` : ''}</span></button>`).join('')}</div>` : ''}
 
     <div class="section-t">הגדרות</div>
     <div class="rows">

@@ -5,7 +5,7 @@ import { setSpelling } from './theory.js';
 import { h, icon, toast } from './ui.js';
 import { app } from './app.js';
 import * as Songs from './views/songs.js';
-import * as Favs from './views/favorites.js';
+import * as Tuner from './views/tuner.js';
 import * as Chords from './views/chords.js';
 import * as Trainer from './views/trainer.js';
 import * as Progress from './views/progress.js';
@@ -14,11 +14,14 @@ import { openEditor } from './views/editor.js';
 import { ensureAudio } from './audio.js';
 import { initNav, hasScreens, refreshTopbar } from './nav.js';
 import { showWhatsNew } from './whatsnew.js';
+import * as Mic from './mic.js';
+import { parseChordSymbol } from './theory.js';
+window.__sarig = { Mic, parseChordSymbol };
 
 const TABS = [
   { id: 'songs', label: 'שירים', icon: 'songs', mod: Songs },
-  { id: 'favs', label: 'מועדפים', icon: 'star', mod: Favs },
   { id: 'chords', label: 'אקורדים', icon: 'chords', mod: Chords },
+  { id: 'tuner', label: 'כוונון', icon: 'tuner', mod: Tuner },
   { id: 'trainer', label: 'אימון', icon: 'timer', mod: Trainer },
   { id: 'progress', label: 'התקדמות', icon: 'chart', mod: Progress },
 ];
@@ -28,8 +31,13 @@ let current = null;
 const pageOf = (id) => document.getElementById('v-' + id);
 
 function go(id, { top = false } = {}) {
-  if (!TABS.some((t) => t.id === id)) id = 'songs';
-  if (current && current !== id) scrollPos[current] = window.scrollY;
+  if (id !== 'favs' && !TABS.some((t) => t.id === id)) id = 'songs';
+  if (current && current !== id) {
+    scrollPos[current] = window.scrollY;
+    const prev = TABS.find((x) => x.id === current);
+    if (prev && prev.mod.onHide) prev.mod.onHide();
+  }
+  if (id === 'favs') { id = 'songs'; setTimeout(() => Songs.setScope && Songs.setScope('fav'), 0); }
   for (const t of TABS) {
     const on = t.id === id;
     pageOf(t.id).classList.toggle('hidden-page', !on);

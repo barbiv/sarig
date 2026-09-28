@@ -119,8 +119,8 @@ export function songPref(k) { return state.songPrefs[k] || (state.songPrefs[k] =
 export function pushRecent(k) {
   update((s) => { s.recent = [k, ...s.recent.filter((x) => x !== k)].slice(0, 30); });
 }
-export function logPlay(k, sec, mode) {
+export function logPlay(k, sec, mode, acc = null) {
   if (sec < 5) return;
-  update((s) => { s.plays.push({ k, t: Date.now() - sec * 1000, d: Math.round(sec), m: mode }); if (s.plays.length > 5000) s.plays.splice(0, 1000); });
+  update((s) => { const rec = { k, t: Date.now() - sec * 1000, d: Math.round(sec), m: mode }; if (acc != null) rec.acc = acc; s.plays.push(rec); if (s.plays.length > 5000) s.plays.splice(0, 1000); });
 }
 export function logPractice(rec) { update((s) => { s.practice.push(rec); }, true); }

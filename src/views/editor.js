@@ -1,6 +1,7 @@
 // Add / edit your own songs: paste a chord sheet or write a progression.
 import { GENRES, parseSheet, sheetLinesFor, mergeMine, mySongMeta, SONGS } from '../library.js';
 import { fetchSyncedLyrics, alignSheet } from '../lyrics.js';
+import { openGuide } from '../importer.js';
 import { parseChordSymbol, chordName } from '../theory.js';
 import { getState, update, save } from '../store.js';
 import { h, esc, icon, openScreen, toast } from '../ui.js';
@@ -57,14 +58,22 @@ export function toProgression(events, sections, bpb = 4) {
   return lines.join('\n');
 }
 
-export function openEditor(song, { model = null, importMode = false } = {}) {
+export function openEditor(song, { model = null, importMode = false, importText = null } = {}) {
   const st = getState();
   const mine = song && song.mine ? st.mySongs[song.k.slice(3)] : null;
   const d = mine ? { ...mine } : {
     title: song ? song.t : '', artist: song ? song.a : '', lang: song ? song.lang : 0, genre: song ? song.g : GENRES.indexOf('לא מסווג'),
     bpm: model ? Math.round(model.bpm) : (song && song.bpm) || 90, bpb: (song && song.bpb) || 4, events: [], sections: [], lyrics: null,
   };
-  let mode = importMode || !song || (mine && mine.sheetText) ? 'sheet' : 'prog';
+  let mode = importMode || importText || !song || (mine && mine.sheetText) ? 'sheet' : 'prog';
+  if (importText) {
+    const lines = importText.replace(/\r/g, '').split('\n');
+    const tl = lines.findIndex((l) => l.startsWith('[סריג]')), al = lines.findIndex((l) => l.startsWith('[אמן]'));
+    if (tl >= 0) d.title = lines[tl].slice(6).trim();
+    if (al >= 0) d.artist = lines[al].slice(5).trim();
+    if (/[\u0590-\u05ff]/.test(importText)) d.lang = 0;
+    importText = lines.filter((_, i) => i !== tl && i !== al).join('\n');
+  }
   let progText = '';
   if (mine) progText = toProgression(mine.events, mine.sections || [], mine.bpb || 4);
   else if (model && !importMode) {
@@ -74,7 +83,7 @@ export function openEditor(song, { model = null, importMode = false } = {}) {
     const secs = model.sections.map((s) => [model.events.findIndex((e) => Math.abs(e.t - s.t) < 0.02), s.label]).filter((x) => x[0] >= 0);
     progText = toProgression(evs, secs, bpb);
   }
-  let sheetText = (mine && mine.sheetText) || '', beatsPer = (mine && mine.beatsPer) || d.bpb || 4;
+  let sheetText = importText || (mine && mine.sheetText) || '', beatsPer = (mine && mine.beatsPer) || d.bpb || 4;
   const sc = openScreen({ title: mine ? 'עריכת שיר' : song ? 'שיר שלי חדש' : 'הוספת שיר', sub: song ? song.t : '' });
   sc.body.innerHTML = `
     <div class="field"><label for="ed-t">שם השיר</label><input id="ed-t" value="${esc(d.title)}" autocomplete="off"></div>
@@ -107,12 +116,13 @@ export function openEditor(song, { model = null, importMode = false } = {}) {
     const pane = $('#ed-pane');
     if (mode === 'sheet') {
       pane.innerHTML = `<p class="note">העתיקו שיר מאתר אקורדים (למשל טאב4יו, נגנו או Ultimate Guitar) והדביקו כאן — שורות אקורדים, מילים וכותרות כמו ״בית״ ו״פזמון״ יזוהו אוטומטית. המילים נשמרות רק במכשיר שלכם.</p>
-        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap"><button class="btn sm" id="ed-t4u">${icon('search')} חיפוש בטאב4יו</button><button class="btn sm primary" id="ed-paste">${icon('paste')} הדבקה מהלוח</button>
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap"><button class="btn sm" id="ed-t4u">${icon('search')} חיפוש בטאב4יו</button><button class="btn sm ghost" id="ed-guide">${icon('info')} העתקה בלחיצה אחת</button><button class="btn sm primary" id="ed-paste">${icon('paste')} הדבקה מהלוח</button>
           <span class="note">פעימות לכל אקורד</span><span class="stepper"><button data-bp="-1">−</button><output id="ed-bp">${beatsPer}</output><button data-bp="1">+</button></span></div>
         <div class="field"><textarea id="ed-sheet" dir="auto" placeholder="[פזמון]&#10;Am      F       C     G&#10;מילים של השיר כאן...">${esc(sheetText)}</textarea></div>`;
       const ta = $('#ed-sheet');
       ta.style.textAlign = 'start';
       ta.addEventListener('input', () => { sheetText = ta.value; renderPrev(); });
+      $('#ed-guide').addEventListener('click', openGuide);
       $('#ed-t4u').addEventListener('click', () => {
         const q = $('#ed-t').value.trim();
         window.open(q ? `https://www.tab4u.com/resultsSimple?tab=songs&q=${encodeURIComponent(q)}` : 'https://www.tab4u.com/', '_blank', 'noopener');

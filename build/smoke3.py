@@ -91,7 +91,7 @@ async def main():
         await pg.screenshot(path=OUT + '39_aligned.png')
         print('aligned', await pg.evaluate("(() => { const s = JSON.parse(localStorage.getItem('fretline-state')); const m = Object.values(s.mySongs)[0]; return [!!m.tev, m.syncInfo, m.tev && m.tev.slice(0,6)]; })()"))
         await pg.click('.screen [data-back]'); await pg.wait_for_timeout(700)
-        for t in ['chords', 'trainer', 'progress', 'favs']:
+        for t in ['chords', 'tuner', 'trainer', 'progress']:
             await pg.click(f'.tab[data-tab={t}]'); await pg.wait_for_timeout(500)
             await pg.screenshot(path=OUT + f'40_{t}.png')
         await pg.click('.tab[data-tab=trainer]'); await pg.wait_for_timeout(300)
