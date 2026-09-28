@@ -45,6 +45,10 @@ self.addEventListener('fetch', (e) => {
     }));
     return;
   }
+  if (url.pathname.endsWith('/data/yt.json')) {
+    e.respondWith(fetch(req).then((r) => { if (r.ok) { const cp = r.clone(); caches.open(DATA).then((c) => c.put('yt.json', cp)); } return r; }).catch(() => caches.open(DATA).then((c) => c.match('yt.json'))));
+    return;
+  }
   if (req.mode === 'navigate') {
     e.respondWith(fetch(req).then((r) => { const cp = r.clone(); caches.open(SHELL).then((c) => c.put('index.html', cp)); return r; }).catch(() => caches.match('index.html', { ignoreSearch: true })));
     return;

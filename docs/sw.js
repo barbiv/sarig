@@ -1,4 +1,4 @@
-const V = '202609282258';
+const V = '202609282300';
 const SHELL = 'sarig-shell-' + V;
 const DATA = 'sarig-data-v1';
 const FONTS = 'sarig-fonts-v1';
@@ -43,6 +43,10 @@ self.addEventListener('fetch', (e) => {
       if (r.ok) c.put(key, r.clone());
       return r;
     }));
+    return;
+  }
+  if (url.pathname.endsWith('/data/yt.json')) {
+    e.respondWith(fetch(req).then((r) => { if (r.ok) { const cp = r.clone(); caches.open(DATA).then((c) => c.put('yt.json', cp)); } return r; }).catch(() => caches.open(DATA).then((c) => c.match('yt.json'))));
     return;
   }
   if (req.mode === 'navigate') {

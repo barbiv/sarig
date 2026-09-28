@@ -3,6 +3,7 @@ import { getState, update } from './store.js';
 import { openSheet, esc } from './ui.js';
 
 export const CHANGES = [
+  { v: '1.1.1', date: '2026-09-29', items: ['קישורי יוטיוב חדשים מגיעים לאפליקציה מיד, בלי לחכות לעדכון'] },
   { v: '1.1.0', date: '2026-09-29', items: [
     'Play Along חדש בסגנון JustinGuitar: שורות מילים עם אקורדים מעליהן, סימון שרץ בזמן אמת, תיבות אקורדים ודפוס פריטה',
     'חיבור אוטומטי לשיר המקורי ביוטיוב — בלי להדביק קישורים',
