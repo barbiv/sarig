@@ -8,7 +8,7 @@
 2. לשינויי נתונים — לשכפל את המאגרים ל-`raw/` (ראו README) ולהריץ `build/build_data.py` / `build/build_chords.py`.
 3. `./build/build.sh` (מעדכן גרסה ב-index.html וב-sw.js, כך שהאייפון מקבל את העדכון).
 4. בדיקה: `cd docs && python3 -m http.server 8765` ואז `python3 build/smoke.py` + `build/smoke2.py` (צילומי מסך למסך אייפון).
-5. commit, ואז `git bundle create sarig.bundle origin/main..main` (או bundle מלא), להעביר למחשב של בר
+5. commit, ואז `git bundle create sarig-<מספר>.bundle main` (שם קובץ חדש בכל פעם — דריסה של קובץ קיים לא תמיד מתעדכנת במחשב), להעביר למחשב של בר
    לתיקייה `~/Documents/Sarig Guitar App/.gh-auth/`, ומשם ב-device_bash:
    `export GH_TOKEN=$(cat ".../.gh-auth/token")`, `git clone https://github.com/barbiv/sarig repo`,
    `git pull <bundle> main`, `git push` עם `https://x-access-token:$GH_TOKEN@github.com/barbiv/sarig.git`.
