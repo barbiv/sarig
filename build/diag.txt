@@ -1,0 +1,36 @@
+== https://lrclib.net/api/search?track_name=let+it+be&artist_name=beatles
+HTTP/2 200 
+access-control-allow-origin: *
+[{"id":36227516,"name":"Let It Be (Let It Be outtake)","trackName":"Let It Be (Let It Be outtake)","artistName":"Beatles","albumName":"Billboard 1970 Top 100","duration":243.0,"instrumental":false,"hasWordSync":false,"plainLyrics":"When I find myself in times of trouble\nMother Mary comes to me\nSpeaking words of wisdom\nLet it be\n\nAnd in my hour of darkness\nShe is standing right in front of me
+== https://lrclib.net/api/search?track_name=%D7%99%D7%A8%D7%95%D7%A9%D7%9C%D7%99%D7%9D+%D7%A9%D7%9C+%D7%96%D7%94%D7%91
+HTTP/2 200 
+access-control-allow-origin: *
+[{"id":36094321,"name":"ירושלים של זהב","trackName":"ירושלים של זהב","artistName":"עפרה חזה","albumName":"מנגינת הלב: אוסף משיריה היפים","duration":346.0,"instrumental":false,"hasWordSync":false,"plainLyrics":"אויר הרים צלול כיין\nוריח אורנים\nנישא ברוח הערביים\nעם קול פעמונים\n\nובתרד�
+== https://inv.nadeko.net/api/v1/search?q=let+it+be&type=video
+HTTP/2 403 
+Endpoint disabled
+== https://invidious.nerdvpn.de/api/v1/search?q=let+it+be&type=video
+HTTP/2 401 
+<html> <head><title>401 Authorization Required</title></head> <body> <center><h1>401 Authorization Required</h1></center> <hr><center>nginx</center> </body> </html> 
+== https://yewtu.be/api/v1/search?q=let+it+be&type=video
+HTTP/2 200 
+<!doctype html> <html lang="en">   <head>     <meta charset="utf-8" />     <meta name="viewport" content="width=device-width, initial-scale=1" />     <meta name="robots" content="noindex, nofollow" />     <title>Verifying your browser…</title>     <!-- No-JS visitors are sent to the image captcha automatically. -->     <noscript>       <meta http-equiv="refresh" content="0; url=/antibot/captcha"
+== https://invidious.privacyredirect.com/api/v1/search?q=let+it+be&type=video
+HTTP/1.1 301 Moved Permanently
+<html> <head><title>301 Moved Permanently</title></head> <body> <center><h1>301 Moved Permanently</h1></center> <hr><center>nginx</center> </body> </html> 
+== https://iv.melmac.space/api/v1/search?q=let+it+be&type=video
+<html> <head><title>301 Moved Permanently</title></head> <body> <center><h1>301 Moved Permanently</h1></center> <hr><center>nginx</center> </body> </html> 
+== https://pipedapi.kavin.rocks/search?q=let+it+be&filter=videos
+HTTP/2 526 
+
+== https://api.piped.private.coffee/search?q=let+it+be&filter=videos
+HTTP/2 200 
+access-control-allow-origin: *
+{"items":[{"url":"/watch?v=CGj85pVzRJs","type":"stream","title":"The Beatles - The Beatles - Let It Be (Official Music Video) [Remastered 2015]","thumbnail":"https://proxy.piped.private.coffee/vi/CGj85pVzRJs/hq720.jpg?host=i.ytimg.com&rs=AOn4CLBsNtxxX2YdvVKLsSYzaZqU0eQJQg&sqp=-oaymwEcCNAFEJQDSFXyq4qpAw4IARUAAIhCGAFwAcABBg%3D%3D","uploaderName":"The Beatles","uploaderUrl":"/channel/UCc4K7bAqpdBP8jh
+== https://pipedapi.adminforge.de/search?q=let+it+be&filter=videos
+HTTP/2 301 
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"> <html><head> <title>301 Moved Permanently</title> </head><body> <h1>Moved Permanently</h1> <p>The document has moved <a href="https://adminforge.de/search?q=let+it+be&amp;filter=videos">here</a>.</p> </body></html> 
+== https://api.invidious.io/instances.json?sort_by=type,users
+HTTP/2 200 
+access-control-allow-origin: *
+[["inv.nadeko.net",{"flag":"🇨🇱","region":"CL","stats":{"version":"2.0","software":{"name":"invidious","version":"2026.08.29-865a61e","branch":"master"},"openRegistrations":true,"usage":{"users":{"total":42796,"activeHalfyear":12127,"activeMonth":4661}},"metadata":{"updatedAt":1790624252,"lastChannelRefreshedAt":1790624177},"playback":{}},"cors":false,"api":false,"type":"https","uri":"https:/
