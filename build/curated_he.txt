@@ -1,0 +1,124 @@
+// Hand-authored basic progressions (approximate, for practice). Format:
+// @title | artist | genre | bpm= | ts= | y= | key= | capo=
+// label: bars   (one chord = one bar, C*2 = two bars, [C G] = split bar, x2 = repeat line)
+
+@ירושלים של זהב | נעמי שמר | שירי ארץ ישראל | bpm=76 | y=1967 | key=Am
+פתיחה: Am E Am*2
+בית: Am Dm G C F Dm E Am x2
+פזמון: C G Am Em F C [Dm E] Am
+סיום: Am E Am*2
+
+@שיר לשלום | להקת הנח"ל | שירי ארץ ישראל | bpm=100 | y=1969 | key=Am
+פתיחה: Am E Am E
+בית: Am Dm G C F Dm E Am x2
+פזמון: Am G C F Dm E Am E x2
+
+@לו יהי | נעמי שמר | שירי ארץ ישראל | bpm=72 | y=1973 | key=G
+פתיחה: G D G D
+בית: G D Em Bm C G Am D x2
+פזמון: G C G D Em C D G x2
+
+@בשנה הבאה | אהוד מנור, נורית הירש | שירי ארץ ישראל | bpm=96 | y=1970 | key=C
+פתיחה: C G C G
+בית: C Am Dm G C Am F G x2
+פזמון: C F G C Am Dm G C x2
+
+@ערב של שושנים | יוסף הדר, משה דור | שירי ארץ ישראל | bpm=70 | y=1957 | key=Am
+בית: Am Dm E Am Am Dm E Am
+פזמון: Dm Am E Am Dm Am E Am
+
+@הנה מה טוב ומה נעים | מסורתי | שירי ארץ ישראל | bpm=112 | key=Am
+חלק א: Am Dm E Am x2
+חלק ב: Am Dm G C Dm Am E Am x2
+
+@שלום עליכם | מסורתי | שירי ארץ ישראל | bpm=92 | key=Am
+בית: Am Dm G C Dm Am E Am x2
+סיום: Dm Am E Am
+
+@כל העולם כולו | ברוך חייט | שירי ארץ ישראל | bpm=104 | y=1970 | key=Am
+חלק א: Am Dm E Am x2
+חלק ב: Dm Am E Am Dm Am [E E7] Am
+
+@הבה נגילה | מסורתי | שירי ארץ ישראל | bpm=126 | key=Am
+חלק א: E*2 [E Am] Am x2
+חלק ב: Am*2 Dm E x2
+חלק ג: Am Dm Am Dm Am Dm E Am
+סיום: E E7 Am*2
+
+@על כל אלה | נעמי שמר | שירי ארץ ישראל | bpm=84 | y=1980 | key=G
+בית: G C G D G C D G x2
+פזמון: C G Am D G C D G x2
+
+@שיר הרעות | סשה ארגוב, חיים גורי | שירי ארץ ישראל | bpm=78 | y=1948 | key=Am
+בית: Am Dm G C F Dm E Am x2
+פזמון: Dm Am E Am Dm Am E Am
+
+@אנו באנו ארצה | עממי | שירי ארץ ישראל | bpm=120 | key=Dm
+חלק א: Dm Gm A Dm x2
+חלק ב: Dm C F A Dm Gm A Dm
+
+@זמר נוגה | רחל, מתי כספי | שירי ארץ ישראל | bpm=72 | key=Em
+בית: Em Am D G C Am B7 Em x2
+
+@אני ואתה | אריק איינשטיין | רוק ישראלי | bpm=80 | y=1971 | key=G
+פתיחה: G D Em C
+בית: G D Em Bm C G Am D x2
+פזמון: C D G Em C D G*2
+
+@יושב על הגדר | אריק איינשטיין | רוק ישראלי | bpm=92 | y=1970 | key=Am
+בית: Am G F E Am G F E x2
+פזמון: F G C Am F G E*2
+
+@אוהב להיות בבית | אריק איינשטיין | רוק ישראלי | bpm=96 | y=1985 | key=G
+בית: G Em C D x4
+פזמון: C D G Em C D G*2
+
+@סע לאט | אריק איינשטיין | רוק ישראלי | bpm=88 | y=1972 | key=C
+בית: C G Am Em F C Dm G x2
+פזמון: F G C Am F G C*2
+
+@מה איתי | שלום חנוך | רוק ישראלי | bpm=90 | key=Em
+בית: Em C G D x4
+פזמון: C D G Em C D Em*2
+
+@רכבת לילה לקהיר | משינה | רוק ישראלי | bpm=132 | y=1986 | key=Am
+פתיחה: Am F C G x2
+בית: Am F C G x4
+פזמון: F G Am*2 F G E*2 x2
+
+@עכשיו מעונן | אביב גפן | רוק ישראלי | bpm=76 | y=1993 | key=Em
+בית: Em C G D x4
+פזמון: C G D Em C G D*2 x2
+
+@גבר הולך לאיבוד | שלמה ארצי | רוק ישראלי | bpm=100 | key=Am
+בית: Am G F E x4
+פזמון: F G C Am F G E*2 x2
+
+@הללויה | חלב ודבש וגלי עטרי | פופ ישראלי | bpm=118 | y=1979 | key=G
+פתיחה: G D Em C
+בית: G Em C D G Em C D
+פזמון: G D Em C G D G*2 x2
+
+@אבניבי | יזהר כהן והקבוצה | פופ ישראלי | bpm=120 | y=1978 | key=C
+בית: C Am F G x4
+פזמון: C Am Dm G C Am [F G] C
+
+@דיווה | דנה אינטרנשיונל | פופ ישראלי | bpm=124 | y=1998 | key=Am
+בית: Am F C G x4
+פזמון: Am F C G Am F E*2 x2
+
+@מתנות קטנות | רמי קלינשטיין | פופ ישראלי | bpm=100 | key=C
+בית: C G Am F x4
+פזמון: F G C Am F G C*2 x2
+
+@ממעמקים | הפרויקט של עידן רייכל | ים-תיכוני ומזרחית | bpm=84 | y=2005 | key=Am
+בית: Am G F E x4
+פזמון: Dm Am G Am Dm Am E Am x2
+
+@אנדלוסית (מהלך מזרחי קלאסי) | תרגול | ים-תיכוני ומזרחית | bpm=110 | key=Am
+חלק א: Am G F E x4
+חלק ב: Dm Am E Am Dm Am [E E7] Am
+
+@בואי כלה | מסורתי | ים-תיכוני ומזרחית | bpm=96 | key=Am
+חלק א: Am Dm G C x2
+חלק ב: F E Am Dm E Am
