@@ -1,4 +1,5 @@
 // Small UI toolkit: html escaping, icons, sheets, screens, toasts.
+import { lockScroll, unlockScroll } from './nav.js';
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const $ = (sel, el = document) => el.querySelector(sel);
 export const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
@@ -66,12 +67,14 @@ export function openSheet({ title = '', body, foot = null, onClose = null, tall 
   if (typeof body === 'string') bodyEl.innerHTML = body; else if (body) bodyEl.append(body);
   if (foot) { const f = h('<div class="sh-foot"></div>'); if (typeof foot === 'string') f.innerHTML = foot; else f.append(foot); sh.append(f); }
   document.body.append(scrim, sh);
+  lockScroll();
   requestAnimationFrame(() => { scrim.classList.add('on'); sh.classList.add('on'); });
   let closed = false;
   const close = () => {
     if (closed) return; closed = true;
     scrim.classList.remove('on'); sh.classList.remove('on');
     setTimeout(() => { scrim.remove(); sh.remove(); }, 330);
+    unlockScroll();
     onClose && onClose();
   };
   scrim.addEventListener('click', close);
@@ -87,36 +90,7 @@ export function openSheet({ title = '', body, foot = null, onClose = null, tall 
   return { el: sh, body: bodyEl, close };
 }
 
-// Full-screen pushed screen
-const stack = [];
-export function openScreen({ cls = '', title = '', sub = '', actions = '', onClose = null }) {
-  const sc = h(`<section class="screen ${cls}" role="dialog" aria-label="${esc(title)}">
-    <div class="sc-head"><button class="iconbtn back" data-back aria-label="חזרה">${icon('back')}</button>
-    <div class="ttl"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div><div class="acts" style="display:flex;gap:8px">${actions}</div></div>
-    <div class="sc-body"></div></section>`);
-  document.body.append(sc);
-  requestAnimationFrame(() => requestAnimationFrame(() => sc.classList.add('on')));
-  let closed = false;
-  const api = {
-    el: sc, body: sc.querySelector('.sc-body'),
-    setTitle(t, s) { sc.querySelector('.ttl b').textContent = t; const sp = sc.querySelector('.ttl span'); if (sp) sp.textContent = s || ''; },
-    close() {
-      if (closed) return; closed = true;
-      sc.classList.remove('on');
-      setTimeout(() => sc.remove(), 340);
-      const i = stack.indexOf(api); if (i >= 0) stack.splice(i, 1);
-      onClose && onClose();
-    },
-  };
-  sc.querySelector('[data-back]').addEventListener('click', () => api.close());
-  // edge swipe back (from right edge in RTL)
-  let x0 = null, dx = 0, yS = 0;
-  sc.addEventListener('touchstart', (e) => { const t = e.touches[0]; if (t.clientX > window.innerWidth - 28 || t.clientX < 28) { x0 = t.clientX; yS = t.clientY; sc.style.transition = 'none'; } }, { passive: true });
-  sc.addEventListener('touchmove', (e) => { if (x0 == null) return; const t = e.touches[0]; dx = t.clientX - x0; if (Math.abs(t.clientY - yS) > 60) { x0 = null; sc.style.transform = ''; return; } sc.style.transform = `translateX(${Math.min(0, dx)}px)`; }, { passive: true });
-  sc.addEventListener('touchend', () => { if (x0 == null) return; sc.style.transition = ''; sc.style.transform = ''; if (dx < -90) api.close(); x0 = null; dx = 0; });
-  stack.push(api);
-  return api;
-}
+export { openScreen } from './nav.js';
 export function fmtTime(sec) {
   sec = Math.max(0, Math.round(sec));
   const m = Math.floor(sec / 60), s = sec % 60;

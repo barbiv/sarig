@@ -21,8 +21,8 @@ jobs:
       - run: pip install -U yt-dlp
       - name: Check CORS of client-side services
         run: |
-          for u in "https://lrclib.net/api/search?track_name=let+it+be&artist_name=beatles" "https://inv.nadeko.net/api/v1/search?q=let+it+be&type=video" "https://invidious.nerdvpn.de/api/v1/search?q=let+it+be&type=video" "https://yewtu.be/api/v1/search?q=let+it+be&type=video" "https://pipedapi.kavin.rocks/search?q=let+it+be&filter=videos" "https://api.piped.private.coffee/search?q=let+it+be&filter=videos"; do
-            echo "== $u"; curl -s -m 15 -D - -o /tmp/body -H "Origin: https://barbiv.github.io" "$u" | grep -iE "^HTTP|access-control-allow-origin" ; head -c 300 /tmp/body; echo; done
+          ( for u in "https://lrclib.net/api/search?track_name=let+it+be&artist_name=beatles" "https://inv.nadeko.net/api/v1/search?q=let+it+be&type=video" "https://invidious.nerdvpn.de/api/v1/search?q=let+it+be&type=video" "https://yewtu.be/api/v1/search?q=let+it+be&type=video" "https://pipedapi.kavin.rocks/search?q=let+it+be&filter=videos" "https://api.piped.private.coffee/search?q=let+it+be&filter=videos"; do
+            echo "== $u"; curl -s -m 15 -D - -o /tmp/body -H "Origin: https://barbiv.github.io" "$u" | grep -iE "^HTTP|access-control-allow-origin" ; head -c 300 /tmp/body; echo; done ) > build/diag.txt 2>&1; cat build/diag.txt
       - name: Resolve
         env:
           YT_LIMIT: ${{ github.event.inputs.limit }}
@@ -33,6 +33,6 @@ jobs:
           git config user.name "sarig-bot"
           git config user.email "sarig-bot@users.noreply.github.com"
           git pull --rebase origin main || true
-          git add docs/data/yt.json
+          git add docs/data/yt.json build/diag.txt
           git commit -m "YouTube: עדכון קישורים לשירים" || echo "nothing to commit"
           git push
