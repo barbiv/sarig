@@ -1,0 +1,38 @@
+name: Resolve YouTube videos
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'How many songs to resolve'
+        default: '2600'
+      minutes:
+        description: 'Time budget in minutes'
+        default: '300'
+permissions:
+  contents: write
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -U yt-dlp
+      - name: Check CORS of client-side services
+        run: |
+          for u in "https://lrclib.net/api/search?track_name=let+it+be&artist_name=beatles" "https://inv.nadeko.net/api/v1/search?q=let+it+be&type=video" "https://invidious.nerdvpn.de/api/v1/search?q=let+it+be&type=video" "https://yewtu.be/api/v1/search?q=let+it+be&type=video" "https://pipedapi.kavin.rocks/search?q=let+it+be&filter=videos" "https://api.piped.private.coffee/search?q=let+it+be&filter=videos"; do
+            echo "== $u"; curl -s -m 15 -D - -o /tmp/body -H "Origin: https://barbiv.github.io" "$u" | grep -iE "^HTTP|access-control-allow-origin" ; head -c 300 /tmp/body; echo; done
+      - name: Resolve
+        env:
+          YT_LIMIT: ${{ github.event.inputs.limit }}
+          YT_MINUTES: ${{ github.event.inputs.minutes }}
+        run: python build/resolve_youtube.py
+      - name: Commit
+        run: |
+          git config user.name "sarig-bot"
+          git config user.email "sarig-bot@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add docs/data/yt.json
+          git commit -m "YouTube: עדכון קישורים לשירים" || echo "nothing to commit"
+          git push
