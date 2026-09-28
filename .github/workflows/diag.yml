@@ -1,0 +1,16 @@
+name: Service check
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          set +e
+          ( for u in "https://lrclib.net/api/search?track_name=let+it+be&artist_name=beatles" "https://lrclib.net/api/search?track_name=%D7%99%D7%A8%D7%95%D7%A9%D7%9C%D7%99%D7%9D+%D7%A9%D7%9C+%D7%96%D7%94%D7%91" "https://inv.nadeko.net/api/v1/search?q=let+it+be&type=video" "https://invidious.nerdvpn.de/api/v1/search?q=let+it+be&type=video" "https://yewtu.be/api/v1/search?q=let+it+be&type=video" "https://invidious.privacyredirect.com/api/v1/search?q=let+it+be&type=video" "https://iv.melmac.space/api/v1/search?q=let+it+be&type=video" "https://pipedapi.kavin.rocks/search?q=let+it+be&filter=videos" "https://api.piped.private.coffee/search?q=let+it+be&filter=videos" "https://pipedapi.adminforge.de/search?q=let+it+be&filter=videos" "https://api.invidious.io/instances.json?sort_by=type,users"; do
+            echo "== $u"; curl -s -m 15 -D /tmp/h -o /tmp/body -H "Origin: https://barbiv.github.io" "$u"; grep -iE "^HTTP|access-control-allow-origin" /tmp/h; head -c 400 /tmp/body | tr '\n' ' '; echo; done ) > build/diag.txt 2>&1
+          git config user.name "sarig-bot"; git config user.email "sarig-bot@users.noreply.github.com"
+          git add build/diag.txt; git commit -m "בדיקת שירותים" || true; git pull --rebase origin main || true; git push
