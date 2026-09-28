@@ -5,6 +5,7 @@ import { esc, icon, toast, fmtMin, relDay } from '../ui.js';
 import { barChart, heatmap, dayKey, ring } from '../charts.js';
 import { allExercises, exName, openExercise } from './trainer.js';
 import { app } from '../app.js';
+import { showWhatsNew } from '../whatsnew.js';
 
 let el;
 export function mount(root) { el = root; el.addEventListener('click', onClick); el.addEventListener('change', onChange); render(); }
@@ -92,8 +93,10 @@ async function render() {
       <label class="row" style="cursor:pointer">${icon('upload').replace('<svg', '<svg style="width:22px;height:22px;color:var(--accent)"')}<span class="grow"><span class="t">שחזור מגיבוי</span><br><span class="d">בחירת קובץ גיבוי ‎.json</span></span><input type="file" id="set-import" accept="application/json,.json" hidden></label>
       <button class="row" data-reset style="color:var(--bad)">${icon('trash').replace('<svg', '<svg style="width:22px;height:22px"')}<span class="grow"><span class="t">מחיקת כל הנתונים</span></span></button>
     </div>
+    <div class="section-t">אודות</div>
+    <div class="rows"><button class="row" data-whatsnew><span class="grow"><span class="t">גרסה ${APP_VERSION}</span><br><span class="d">מה חדש והיסטוריית גרסאות</span></span>${icon('chev').replace('<svg', '<svg class="chev"')}</button></div>
     <div class="section-t">מקורות</div>
-    <p class="note">שירים ואקורדים: McGill Billboard Project (CC0); ChoCo — Chord Corpus (CC BY 4.0) הכולל את Isophonics, USPOP2002, Robbie Williams, Rock Corpus, iReal Pro, Wikifonia ו־Band-in-a-Box corpus. צורות אחיזה: chords-db מאת David Rubert (MIT). שירים בעברית: מהלכים בסיסיים שנכתבו לתרגול. ${SONGS.length.toLocaleString('he-IL')} שירים במאגר.</p>`;
+    <p class="note">שירים ואקורדים: McGill Billboard Project (CC0); ChoCo — Chord Corpus (CC BY 4.0) הכולל את Isophonics, USPOP2002, Robbie Williams, Rock Corpus, iReal Pro, Wikifonia ו־Band-in-a-Box corpus. צורות אחיזה: chords-db מאת David Rubert (MIT). שירים בעברית: מהלכים בסיסיים שנכתבו לתרגול. מילים מסונכרנות: LRCLIB (נטענות למכשיר בלבד). סרטונים: YouTube. ${SONGS.length.toLocaleString('he-IL')} שירים במאגר.</p>`;
   el.querySelector('#set-spell').value = sts.spelling || 'auto';
   el.querySelector('#set-theme').value = sts.theme || 'auto';
 }
@@ -105,6 +108,7 @@ function onClick(e) {
   else if (b.dataset.song) { const s = byKey(b.dataset.song); if (s) app.openPlayer(s); }
   else if (b.hasAttribute('data-persist')) requestPersist().then((ok) => { toast(ok ? 'שמירה קבועה הופעלה' : 'הדפדפן לא אישר — הוסיפו את האפליקציה למסך הבית'); render(); });
   else if (b.hasAttribute('data-export')) doExport();
+  else if (b.hasAttribute('data-whatsnew')) showWhatsNew(true);
   else if (b.hasAttribute('data-offline')) {
     const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
     if (!sw) { toast('זמין אחרי התקנת האפליקציה (פתיחה מחדש)'); return; }

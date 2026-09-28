@@ -43,7 +43,7 @@ export function mySongMeta(m) {
   const chords = [...new Set(m.events.map((e) => e[0]).filter((c) => c >= 0).map((c) => c % (12 * NQ)))];
   return {
     k: 'my:' + m.uid, id: -1, t: m.title, a: m.artist || '', lang: m.lang ?? 0, g: m.genre ?? GENRES.indexOf('לא מסווג'), y: m.year || 0,
-    key: -1, bpm: m.bpm, bpb: m.bpb || 4, flags: 4, diff: 2, chords, capo: 0, pop: 999, dur: 0, src: 'mine', timed: false,
+    key: -1, bpm: m.bpm, bpb: m.bpb || 4, flags: 4, diff: 2, chords, capo: 0, pop: 999, dur: 0, src: 'mine', timed: !!(m.tev && m.tev.length),
     nobarre: false, capoEasy: false, curated: false, mine: true, basics: [...new Set(chords.map(basicOf))], s: norm(m.title + ' ' + (m.artist || '')),
   };
 }
@@ -66,7 +66,11 @@ function shiftBasic(b, n) { const r = Math.floor(b / 5), f = b % 5; return (((r 
 
 export function filterSongs(f) {
   const st = getState();
-  const q = norm(f.q).trim();
+  let q = norm(f.q).trim();
+  // a query made only of chord names ("Am F C G") searches by chords
+  const rawToks = (f.q || '').trim().split(/[\s,]+/).filter(Boolean);
+  let qChords = null;
+  if (rawToks.length >= 2 && rawToks.every((t) => parseChordSymbol(t) != null)) { qChords = rawToks.map((t) => basicOf(parseChordSymbol(t))); q = ''; }
   const terms = q ? q.split(/\s+/) : [];
   const sel = new Set(f.chords);
   const genres = new Set(f.genres), diffs = new Set(f.diff), decs = new Set(f.decades), tss = new Set(f.ts);
@@ -74,6 +78,7 @@ export function filterSongs(f) {
   for (const s of SONGS) {
     if (f.lang !== 'all' && s.lang !== f.lang) continue;
     if (terms.length && !terms.every((t) => s.s.includes(t))) continue;
+    if (qChords && !qChords.every((b) => s.basics.includes(b))) continue;
     if (genres.size && !genres.has(s.g)) continue;
     if (diffs.size && !diffs.has(s.diff)) continue;
     const n = s.basics.length;
@@ -141,7 +146,30 @@ export async function loadSong(song) {
   const pref = st.songPrefs[song.k] || {};
   if (song.mine) {
     const m = st.mySongs[song.k.slice(3)];
-    return buildSymbolic(song, { e: m.events, s: m.sections || [], ly: m.lyrics || null }, pref.bpm || m.bpm || 90);
+    let model;
+    if (m.tev && m.tev.length > 2) {
+      // aligned to the original recording (seconds)
+      const ev = m.tev.map(([t, c, li]) => ({ t, c, li }));
+      const end = (m.end || ev[ev.length - 1].t + 4);
+      for (let i = 0; i < ev.length; i++) ev[i].d = (i + 1 < ev.length ? ev[i + 1].t : end) - ev[i].t;
+      const spb = 60 / (m.bpm || 90), beats = [], downs = new Set();
+      for (let t = ev[0].t, k = 0; t < end; t += spb, k++) { if (k % (m.bpb || 4) === 0) downs.add(beats.length); beats.push(t); }
+      model = { timed: true, aligned: true, events: ev, beats, downs, sections: [], dur: end, bpm: m.bpm || 90, bpb: m.bpb || 4 };
+      if (m.lines) model.sheet = m.lines.map((l, k) => ({ text: l.text, t0: m.lineTimes[k][0], t1: m.lineTimes[k][1], label: null }));
+    } else {
+      model = buildSymbolic(song, { e: m.events, s: m.sections || [], ly: m.lines ? null : (m.lyrics || null) }, pref.bpm || m.bpm || 90);
+      if (m.lines) {
+        const ev = model.events;
+        model.sheet = m.lines.map((l) => {
+          const a = ev[Math.min(l.first, ev.length - 1)], b = ev[l.first + l.n];
+          return { text: l.text, t0: l.n ? ev[l.first].t : (a ? a.t : 0), t1: l.n ? (b ? b.t : model.dur) : (a ? a.t : 0), label: null };
+        });
+      }
+    }
+    if (m.pos) model.pos = m.pos;
+    if (m.sections && m.sections.length && model.aligned) model.sections = m.sections.map(([i, l]) => ({ t: m.tev[Math.min(i, m.tev.length - 1)][0], label: l }));
+    model.release = null;
+    return model;
   }
   const chunk = await loadChunk(Math.floor(song.id / INDEX.chunk));
   const d = chunk[song.id];
@@ -199,39 +227,51 @@ export function isChordToken(tok) {
   if (/^x\d+$/i.test(t) || t === '|' || t === '-' || t === '%') return 'skip';
   return parseChordSymbol(t) != null ? 'chord' : null;
 }
+function lineKind(raw) {
+  const line = raw.trim();
+  if (!line) return 'blank';
+  if (HEADER.test(line) && line.length < 30) return 'header';
+  let chords = 0, other = 0;
+  for (const t of line.split(/\s+/)) { const k = isChordToken(t); if (k === 'chord') chords++; else if (k !== 'skip') other++; }
+  return chords > 0 && chords >= other * 2 ? 'chords' : 'text';
+}
+// Parses a pasted chord sheet (chords above lyrics). Chord positions over the words are kept as a 0..1 fraction.
 export function parseSheet(text, { beatsPerChord = 4 } = {}) {
-  const lines = text.replace(/\r/g, '').split('\n');
-  const events = [], sections = [], lyrics = [];
-  let pendingLy = null;
-  let lastChordLine = -1;
-  for (let li = 0; li < lines.length; li++) {
-    const raw = lines[li];
-    const line = raw.trim();
-    if (!line) continue;
-    const hm = HEADER.exec(line);
-    if (hm && line.length < 30) { sections.push([events.length, hm[1].replace(/:$/, '')]); continue; }
-    const toks = line.split(/\s+/);
-    let chords = 0, other = 0;
-    for (const t of toks) { const k = isChordToken(t); if (k === 'chord') chords++; else if (k !== 'skip') other++; }
-    const isChordLine = chords > 0 && chords >= other * 2;
-    if (isChordLine) {
-      const cs = toks.map((t) => t.replace(/^[|(\[]+|[|)\],.]+$/g, '')).filter((t) => isChordToken(t) === 'chord').map(parseChordSymbol);
-      const nextLine = (lines[li + 1] || '').trim();
-      const nextIsLyric = nextLine && !HEADER.test(nextLine) && !(() => {
-        const tk = nextLine.split(/\s+/); let c = 0, o = 0; for (const t of tk) { const k = isChordToken(t); if (k === 'chord') c++; else if (k !== 'skip') o++; } return c > 0 && c >= o * 2;
-      })();
-      const ly = nextIsLyric ? nextLine : '';
-      cs.forEach((c, i) => { events.push([c, beatsPerChord]); lyrics.push(i === 0 ? ly : ''); });
-      if (nextIsLyric) li++;
-      lastChordLine = li;
-      pendingLy = null;
-    } else {
-      // lyric line without chords: attach to the previous chord if any
-      pendingLy = line;
-      if (lyrics.length && lastChordLine === li - 1) { /* already attached */ }
+  const raw = text.replace(/\r/g, '').replace(/\u00a0/g, ' ').replace(/\t/g, '    ').split('\n');
+  const events = [], sections = [], lyrics = [], lines = [], pos = [];
+  for (let li = 0; li < raw.length; li++) {
+    const k = lineKind(raw[li]);
+    if (k === 'blank') continue;
+    if (k === 'header') { sections.push([events.length, HEADER.exec(raw[li].trim())[1].replace(/:$/, '')]); continue; }
+    if (k === 'text') { lines.push({ text: raw[li].trim(), first: events.length, n: 0 }); continue; }
+    const cl = raw[li].replace(/\s+$/, '');
+    const next = raw[li + 1] || '';
+    const hasLy = lineKind(next) === 'text';
+    const ly = hasLy ? next.replace(/\s+$/, '') : '';
+    const width = Math.max(cl.length, ly.length, 1);
+    const toks = [];
+    for (const m of cl.matchAll(/\S+/g)) {
+      const t = m[0].replace(/^[|(\[]+|[|)\],.]+$/g, '');
+      if (isChordToken(t) === 'chord') toks.push({ cid: parseChordSymbol(t), pos: m.index / width });
     }
+    if (!toks.length) continue;
+    // lyric line leading whitespace shifts the text start
+    const lead = hasLy ? ly.length - ly.trimStart().length : 0;
+    const span = Math.max(1, (hasLy ? ly.trimEnd().length : width) - lead);
+    const first = events.length;
+    toks.forEach((c, i) => {
+      events.push([c.cid, beatsPerChord]);
+      lyrics.push(i === 0 ? ly.trim() : '');
+      pos.push(hasLy ? Math.max(0, Math.min(1, (c.pos * width - lead) / span)) : i / toks.length);
+    });
+    lines.push({ text: ly.trim(), first, n: toks.length });
+    if (hasLy) li++;
   }
-  return { events, sections, lyrics };
+  return { events, sections, lyrics, lines: lines.filter((l) => l.n > 0 || l.text), pos };
+}
+// Convert parsed sheet to the alignment input
+export function sheetLinesFor(parsed) {
+  return parsed.lines.map((l) => ({ text: l.text, chords: Array.from({ length: l.n }, (_, k) => ({ cid: parsed.events[l.first + k][0], pos: parsed.pos[l.first + k] })) }));
 }
 export function styleOfSong(s) { return GENRES[s.g] || ''; }
 export function rootsOf(s) { return s.chords.map(cidRoot); }

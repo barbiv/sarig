@@ -27,7 +27,6 @@ export function songRowHTML(s, extra = {}) {
 
 export function mount(root) {
   el = root;
-  scroller = root;
   const st = getState();
   f = { ...defaultFilters(), ...(st.settings.lastFilters || {}) };
   f.q = '';
@@ -37,7 +36,8 @@ export function mount(root) {
     <div class="vhead"><div><h1>שירים</h1><div class="sub">${SONGS.length.toLocaleString('he-IL')} שירים · ${timedCount.toLocaleString('he-IL')} מסונכרנים להקלטה · ${heCount} בעברית</div></div>
       <div style="display:flex;gap:8px"><button class="iconbtn" id="sg-add" aria-label="הוספת שיר">${icon('plus')}</button>
       <button class="iconbtn" id="sg-filter" aria-label="סינון">${icon('filter')}<span class="badge" id="sg-badge" hidden></span></button></div></div>
-    <div class="search">${icon('search')}<input id="sg-q" type="search" placeholder="שם שיר או אמן" autocomplete="off"><button class="clear" id="sg-qx" hidden aria-label="נקה">${icon('close')}</button></div>
+    <div id="sg-resume"></div>
+    <div class="search">${icon('search')}<input id="sg-q" type="search" placeholder="שם שיר, אמן או אקורדים (Am F C G)" autocomplete="off"><button class="clear" id="sg-qx" hidden aria-label="נקה">${icon('close')}</button></div>
     <div class="seg" id="sg-lang" style="margin-top:10px"><button data-l="all">הכל</button><button data-l="0">עברית</button><button data-l="1">אנגלית</button><button data-l="2">אחר</button></div>
     <div class="chips" id="sg-quick" style="margin-top:10px">
       <button class="chip" data-q="canplay">${icon('hand')} מה אני יכול לנגן</button>
@@ -62,11 +62,21 @@ export function mount(root) {
   el.querySelector('#sg-filter').addEventListener('click', openFilters);
   el.querySelector('#sg-add').addEventListener('click', () => app.openEditor(null));
   listEl.addEventListener('click', onListClick);
-  scroller.addEventListener('scroll', () => requestAnimationFrame(paint), { passive: true });
+  window.addEventListener('scroll', () => { if (el.offsetParent !== null) requestAnimationFrame(paint); }, { passive: true });
   window.addEventListener('resize', paint);
   refresh(true);
+  renderResume();
 }
-export function onShow() { refresh(false); }
+export function onShow() { refresh(false); renderResume(); }
+function renderResume() {
+  const box = el && el.querySelector('#sg-resume');
+  if (!box) return;
+  const ls = getState().lastSong;
+  const s = ls && Date.now() - ls.at < 14 * 86400000 && SONGS.find((x) => x.k === ls.k);
+  if (!s) { box.innerHTML = ''; return; }
+  box.innerHTML = `<button class="resume-card" data-k="${esc(s.k)}"><span class="rc-ic">${icon('play')}</span><span class="grow"><span class="d">להמשיך לנגן</span><b>${esc(s.t)}</b></span><span class="num">${ls.t > 5 ? Math.floor(ls.t / 60) + ':' + String(ls.t % 60).padStart(2, '0') : ''}</span></button>`;
+  box.firstChild.onclick = () => app.openPlayer(s);
+}
 
 export function onListClickFactory(getSong) {
   return (e) => {
@@ -128,8 +138,8 @@ export function refresh(resetScroll) {
   el.querySelector('#sg-count').textContent = `${results.length.toLocaleString('he-IL')} שירים`;
   listEl.style.height = `${Math.max(1, results.length) * ROW}px`;
   if (resetScroll) {
-    const top = listEl.offsetTop - 60;
-    if (scroller.scrollTop > top) scroller.scrollTop = Math.max(0, top);
+    const top = listEl.getBoundingClientRect().top + window.scrollY - 150;
+    if (window.scrollY > top) window.scrollTo(0, Math.max(0, top));
   }
   lastRange = '';
   paint();
@@ -143,8 +153,9 @@ function paint() {
     listEl.style.height = 'auto';
     return;
   }
-  const top = scroller.scrollTop - listEl.offsetTop;
-  const vh = scroller.clientHeight;
+  if (el.offsetParent === null) return;
+  const top = -listEl.getBoundingClientRect().top;
+  const vh = window.innerHeight;
   const a = Math.max(0, Math.floor(top / ROW) - 8), b = Math.min(results.length, Math.ceil((top + vh) / ROW) + 8);
   const key = a + ':' + b;
   if (key === lastRange) return;

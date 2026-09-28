@@ -12,6 +12,8 @@ import * as Progress from './views/progress.js';
 import { openPlayer } from './views/player.js';
 import { openEditor } from './views/editor.js';
 import { ensureAudio } from './audio.js';
+import { initNav, hasScreens, refreshTopbar } from './nav.js';
+import { showWhatsNew } from './whatsnew.js';
 
 const TABS = [
   { id: 'songs', label: 'שירים', icon: 'songs', mod: Songs },
@@ -21,22 +23,27 @@ const TABS = [
   { id: 'progress', label: 'התקדמות', icon: 'chart', mod: Progress },
 ];
 const mounted = new Set();
+const scrollPos = {};
 let current = null;
+const pageOf = (id) => document.getElementById('v-' + id);
 
-function go(id) {
+function go(id, { top = false } = {}) {
   if (!TABS.some((t) => t.id === id)) id = 'songs';
+  if (current && current !== id) scrollPos[current] = window.scrollY;
   for (const t of TABS) {
-    const v = document.getElementById('v-' + t.id);
     const on = t.id === id;
-    v.hidden = !on;
+    pageOf(t.id).classList.toggle('hidden-page', !on);
     document.querySelector(`.tab[data-tab="${t.id}"]`).setAttribute('aria-selected', String(on));
-    if (on) {
-      if (!mounted.has(t.id)) { t.mod.mount(v); mounted.add(t.id); } else if (current !== id || true) t.mod.onShow && t.mod.onShow();
-    }
   }
+  const t = TABS.find((x) => x.id === id);
+  const body = pageOf(id).querySelector('.vbody');
+  if (!mounted.has(id)) { t.mod.mount(body); mounted.add(id); } else if (t.mod.onShow) t.mod.onShow();
+  const changed = current !== id;
   current = id;
+  window.scrollTo(0, top ? 0 : (changed ? scrollPos[id] || 0 : window.scrollY));
+  refreshTopbar();
   update((s) => { s.settings.tab = id; });
-  history.replaceState(null, '', '#' + id);
+  history.replaceState(history.state, '', '#' + id);
 }
 
 async function boot() {
@@ -54,11 +61,13 @@ async function boot() {
   }
   mergeMine();
   const appEl = document.getElementById('app');
-  appEl.innerHTML = `<main class="views">${TABS.map((t) => `<section class="view" id="v-${t.id}" hidden aria-label="${t.label}"></section>`).join('')}</main>
+  appEl.innerHTML = `<main id="pages">${TABS.map((t) => `<section class="page tabpage hidden-page" id="v-${t.id}" aria-label="${t.label}">
+      <header class="topbar"><div class="tb-inner"><b class="tb-title">${t.label}</b></div></header><div class="vbody"></div></section>`).join('')}</main>
     <nav class="tabbar" role="tablist">${TABS.map((t) => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="false">${icon(t.icon)}<span>${t.label}</span></button>`).join('')}</nav>`;
+  initNav(appEl.querySelector('#pages'), () => pageOf(current));
   appEl.querySelector('.tabbar').addEventListener('click', (e) => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
-    if (b.dataset.tab === current) { const v = document.getElementById('v-' + current); v.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (b.dataset.tab === current) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     go(b.dataset.tab);
   });
   app.go = go;
@@ -67,12 +76,12 @@ async function boot() {
   app.showSongsWithChords = (basics, mode) => { go('songs'); Songs.setChordFilter(basics, mode); };
   app.refresh = () => { mergeMine(); const t = TABS.find((x) => x.id === current); if (t && mounted.has(t.id) && t.mod.onShow) t.mod.onShow(); if (mounted.has('songs')) Songs.refresh(false); };
   const hash = location.hash.slice(1);
-  go(hash || st.settings.tab || 'songs');
+  go(TABS.some((t) => t.id === hash) ? hash : st.settings.tab || 'songs');
   splash.remove();
   // storage persistence + audio unlock on first interaction
   const first = () => { requestPersist(); ensureAudio(); window.removeEventListener('pointerdown', first); };
   window.addEventListener('pointerdown', first);
-  if (!st.onboarded) onboarding();
+  if (!st.onboarded) onboarding(); else showWhatsNew();
 }
 
 function onboarding() {
@@ -91,7 +100,7 @@ function onboarding() {
     <div style="flex:1"></div>
     <button class="btn primary block" style="height:54px;font-size:18px">בואו נתחיל</button></div>`);
   document.body.append(el);
-  el.querySelector('button.btn').addEventListener('click', () => { update((s) => { s.onboarded = Date.now(); }, true); el.remove(); requestPersist(); });
+  el.querySelector('button.btn').addEventListener('click', () => { update((s) => { s.onboarded = Date.now(); s.seenVersion = APP_VERSION; }, true); el.remove(); requestPersist(); });
 }
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

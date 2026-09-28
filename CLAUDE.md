@@ -15,6 +15,16 @@
    (אם הטוקן פג — device flow עם client_id של gh: 178c6fc778ccc68e1d6a, scopes repo,workflow.)
 6. תיקייה מחוברת לא מאפשרת מחיקה — להחזיק את ה-clone ב-$HOME של ה-VM, לא ב-Documents.
 
+## גרסאות ו-rollback
+- מספר הגרסה בקובץ `VERSION` (מוזרק לאפליקציה כ-APP_VERSION). לכל שחרור: לעדכן VERSION, להוסיף רשומה ב-`CHANGELOG.md` וב-`src/whatsnew.js`, לבנות, לדחוף, ואז `git tag vX.Y.Z` + `gh release create`.
+- Rollback: `git checkout vX.Y.Z -- docs` ואז commit + push (האתר חוזר לגרסה הזו; נתוני המשתמש במכשיר לא נפגעים).
+- עבודה על שינויים גדולים: לבנות ולבדוק מקומית לפני push ל-main (main = האתר החי).
+
+## יוטיוב ומילים
+- `docs/data/yt.json` נבנה ע"י GitHub Action `youtube.yml` (yt-dlp, מתוך GitHub Actions — לסביבות של Claude אין גישה ליוטיוב). הרצה: `gh workflow run youtube.yml -f limit=2600 -f minutes=300`.
+- מילים מסונכרנות: LRCLIB, נטענות בזמן ריצה במכשיר ונשמרות רק שם. לא לשמור מילים בריפו.
+- חיפוש חי של סרטונים: Piped API (api.piped.private.coffee). `diag.yml` בודק זמינות שירותים וכותב ל-`build/diag.txt`.
+
 ## עקרונות
 - ממשק בעברית RTL; שמות אקורדים LTR. נתוני המשתמש נשמרים מקומית (IndexedDB + localStorage) — לא לשבור את מבנה ה-state ב-`src/store.js` (להוסיף שדות, לא לשנות קיימים). מפתחות שירים יציבים (`db:<hash>`) — לא לשנות את `stable_key`.
 - בלי מילות שירים במאגר המובנה (זכויות יוצרים).

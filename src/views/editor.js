@@ -1,5 +1,6 @@
 // Add / edit your own songs: paste a chord sheet or write a progression.
-import { GENRES, parseSheet, mergeMine, mySongMeta, SONGS } from '../library.js';
+import { GENRES, parseSheet, sheetLinesFor, mergeMine, mySongMeta, SONGS } from '../library.js';
+import { fetchSyncedLyrics, alignSheet } from '../lyrics.js';
 import { parseChordSymbol, chordName } from '../theory.js';
 import { getState, update, save } from '../store.js';
 import { h, esc, icon, openScreen, toast } from '../ui.js';
@@ -63,7 +64,7 @@ export function openEditor(song, { model = null, importMode = false } = {}) {
     title: song ? song.t : '', artist: song ? song.a : '', lang: song ? song.lang : 0, genre: song ? song.g : GENRES.indexOf('לא מסווג'),
     bpm: model ? Math.round(model.bpm) : (song && song.bpm) || 90, bpb: (song && song.bpb) || 4, events: [], sections: [], lyrics: null,
   };
-  let mode = importMode ? 'sheet' : 'prog';
+  let mode = importMode || !song || (mine && mine.sheetText) ? 'sheet' : 'prog';
   let progText = '';
   if (mine) progText = toProgression(mine.events, mine.sections || [], mine.bpb || 4);
   else if (model && !importMode) {
@@ -73,7 +74,7 @@ export function openEditor(song, { model = null, importMode = false } = {}) {
     const secs = model.sections.map((s) => [model.events.findIndex((e) => Math.abs(e.t - s.t) < 0.02), s.label]).filter((x) => x[0] >= 0);
     progText = toProgression(evs, secs, bpb);
   }
-  let sheetText = '', beatsPer = d.bpb || 4;
+  let sheetText = (mine && mine.sheetText) || '', beatsPer = (mine && mine.beatsPer) || d.bpb || 4;
   const sc = openScreen({ title: mine ? 'עריכת שיר' : song ? 'שיר שלי חדש' : 'הוספת שיר', sub: song ? song.t : '' });
   sc.body.innerHTML = `
     <div class="field"><label for="ed-t">שם השיר</label><input id="ed-t" value="${esc(d.title)}" autocomplete="off"></div>
@@ -97,7 +98,7 @@ export function openEditor(song, { model = null, importMode = false } = {}) {
   const $ = (s) => sc.body.querySelector(s);
   $('#ed-l').value = String(d.lang ?? 0);
   const parsed = () => {
-    if (mode === 'sheet') { const r = parseSheet(sheetText, { beatsPerChord: beatsPer }); return { events: r.events, sections: r.sections, lyrics: r.lyrics, errors: [] }; }
+    if (mode === 'sheet') { const r = parseSheet(sheetText, { beatsPerChord: beatsPer }); return { ...r, errors: [] }; }
     const r = parseProgression(progText, d.bpb || 4); return { ...r, lyrics: null };
   };
   const renderPane = () => {
@@ -106,12 +107,16 @@ export function openEditor(song, { model = null, importMode = false } = {}) {
     const pane = $('#ed-pane');
     if (mode === 'sheet') {
       pane.innerHTML = `<p class="note">העתיקו שיר מאתר אקורדים (למשל טאב4יו, נגנו או Ultimate Guitar) והדביקו כאן — שורות אקורדים, מילים וכותרות כמו ״בית״ ו״פזמון״ יזוהו אוטומטית. המילים נשמרות רק במכשיר שלכם.</p>
-        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap"><button class="btn sm" id="ed-paste">${icon('paste')} הדבקה מהלוח</button>
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap"><button class="btn sm" id="ed-t4u">${icon('search')} חיפוש בטאב4יו</button><button class="btn sm primary" id="ed-paste">${icon('paste')} הדבקה מהלוח</button>
           <span class="note">פעימות לכל אקורד</span><span class="stepper"><button data-bp="-1">−</button><output id="ed-bp">${beatsPer}</output><button data-bp="1">+</button></span></div>
         <div class="field"><textarea id="ed-sheet" dir="auto" placeholder="[פזמון]&#10;Am      F       C     G&#10;מילים של השיר כאן...">${esc(sheetText)}</textarea></div>`;
       const ta = $('#ed-sheet');
       ta.style.textAlign = 'start';
       ta.addEventListener('input', () => { sheetText = ta.value; renderPrev(); });
+      $('#ed-t4u').addEventListener('click', () => {
+        const q = $('#ed-t').value.trim();
+        window.open(q ? `https://www.tab4u.com/resultsSimple?tab=songs&q=${encodeURIComponent(q)}` : 'https://www.tab4u.com/', '_blank', 'noopener');
+      });
       $('#ed-paste').addEventListener('click', async () => {
         try { const t = await navigator.clipboard.readText(); if (t) { sheetText = t; ta.value = t; renderPrev(); } } catch (e) { ta.focus(); toast('הדביקו בשדה (לחיצה ארוכה ← הדבק)'); }
       });
@@ -144,22 +149,38 @@ export function openEditor(song, { model = null, importMode = false } = {}) {
     else if (b.dataset.bpm) { d.bpm = Math.max(40, Math.min(260, d.bpm + +b.dataset.bpm)); $('#ed-bpm').textContent = d.bpm; renderPrev(); }
     else if (b.dataset.bp) { beatsPer = Math.max(1, Math.min(16, beatsPer + +b.dataset.bp)); $('#ed-bp').textContent = beatsPer; renderPrev(); }
   });
-  $('#ed-save').addEventListener('click', () => {
+  $('#ed-save').addEventListener('click', async () => {
     const r = parsed();
     const title = $('#ed-t').value.trim();
     if (!title) { toast('תנו לשיר שם'); $('#ed-t').focus(); return; }
     if (r.events.filter((x) => x[0] >= 0).length < 2) { toast('צריך לפחות שני אקורדים'); return; }
-    if (mode === 'prog' && mine && mine.lyrics && r.events.length === mine.events.length) r.lyrics = mine.lyrics;
+    if (mode === 'prog' && mine && mine.lyrics && r.events.length === mine.events.length) { r.lyrics = mine.lyrics; r.lines = mine.lines; r.pos = mine.pos; }
     const uid = mine ? mine.uid : Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const rec = { uid, title, artist: $('#ed-a').value.trim(), lang: +$('#ed-l').value, genre: +$('#ed-g').value, bpm: d.bpm, bpb: d.bpb || 4,
-      events: r.events, sections: r.sections, lyrics: r.lyrics && r.lyrics.some(Boolean) ? r.lyrics : null, created: mine ? mine.created : Date.now(), updated: Date.now() };
-    update((s) => { s.mySongs[uid] = rec; const p = s.songPrefs['my:' + uid]; if (p) delete p.bpm; }, true);
+    const artist = $('#ed-a').value.trim();
+    const rec = { uid, title, artist, lang: +$('#ed-l').value, genre: +$('#ed-g').value, bpm: d.bpm, bpb: d.bpb || 4,
+      events: r.events, sections: r.sections, lyrics: r.lyrics && r.lyrics.some(Boolean) ? r.lyrics : null,
+      lines: r.lines && r.lines.some((l) => l.text) ? r.lines : null, pos: r.pos || null,
+      sheetText: mode === 'sheet' ? sheetText : null, beatsPer, created: mine ? mine.created : Date.now(), updated: Date.now() };
+    // try to align the sheet to the original recording using synced lyrics
+    if (rec.lines) {
+      const btn = $('#ed-save');
+      btn.disabled = true; btn.textContent = 'מחפש מילים מסונכרנות לשיר המקורי…';
+      try {
+        const lrc = await fetchSyncedLyrics({ key: 'my:' + title + '|' + artist, title, artist });
+        const al = lrc && alignSheet(sheetLinesFor({ lines: rec.lines, events: rec.events, pos: rec.pos || [] }), lrc.lines, { secPerChord: (beatsPer * 60) / d.bpm });
+        if (al) {
+          rec.tev = al.tev; rec.lineTimes = al.lineTimes; rec.end = Math.max(lrc.dur || 0, al.tev[al.tev.length - 1][0] + 6); rec.syncInfo = `${al.matched}/${al.total}`;
+          toast(`סונכרן לשיר המקורי (${al.matched} מתוך ${al.total} שורות)`, 3000);
+        } else if (lrc) toast('נמצאו מילים אבל ההתאמה חלשה — השיר ינוגן בקצב שבחרתם', 3500);
+        else toast('לא נמצאו מילים מסונכרנות — השיר ינוגן בקצב שבחרתם', 3000);
+      } catch (e) { /* offline */ }
+    }
+    update((s) => { s.mySongs[uid] = rec; const p = s.songPrefs['my:' + uid]; if (p) { delete p.bpm; delete p.mode; } }, true);
     mergeMine();
     sc.close();
-    toast('השיר נשמר');
     app.refresh();
     const meta = SONGS.find((x) => x.k === 'my:' + uid) || mySongMeta(rec);
-    setTimeout(() => app.openPlayer(meta), 250);
+    setTimeout(() => app.openPlayer(meta), 380);
   });
   const del = $('#ed-del');
   if (del) {
