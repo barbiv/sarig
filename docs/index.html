@@ -16,9 +16,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Heebo:wght@400;500;600;700;800&family=Secular+One&display=swap">
-<link rel="stylesheet" href="app.css?v=202609282319">
+<link rel="stylesheet" href="app.css?v=202609291029">
 <style>
-#splash{position:fixed;inset:0;display:grid;place-items:center;background:#14100E;color:#F2E9DB;font-family:Heebo,system-ui,sans-serif;text-align:center;z-index:200}
+#splash{position:fixed;inset:0;display:grid;place-items:center;background:#14100E;color:#F2E9DB;font-family:-apple-system,Heebo,system-ui,sans-serif;text-align:center;z-index:200;transition:opacity .3s ease}
+#splash.out{opacity:0;pointer-events:none}
 #splash img{width:84px;height:84px;border-radius:20px}
 #splash p{opacity:.7;margin-top:14px;font-size:15px}
 @media (prefers-color-scheme: light){#splash{background:#F5EFE6;color:#221912}}
@@ -27,6 +28,6 @@
 <body>
 <div id="splash"><div><img src="icons/icon-192.png" alt=""><p>טוען את מאגר השירים…</p></div></div>
 <div id="app"></div>
-<script src="app.js?v=202609282319"></script>
+<script src="app.js?v=202609291029"></script>
 </body>
 </html>

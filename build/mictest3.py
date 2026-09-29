@@ -25,6 +25,7 @@ async def main():
         await pg.click('#pl-play'); await pg.wait_for_timeout(15000)
         await pg.screenshot(path=OUT + '55_player_listen.png')
         print(await pg.evaluate("[...document.querySelectorAll('.sl.bars .bar b')].slice(0,12).map(b=>b.textContent+(b.classList.contains('ok')?'✓':b.classList.contains('bad')?'✗':'')).join(' ')"))
+        print('stage:', await pg.evaluate("[...document.querySelectorAll('.bwrap')].slice(0,16).map(b=>b.textContent+(b.classList.contains('ok')?'✓':b.classList.contains('bad')?'✗':'')).join(' ')"))
         print('lis:', await pg.evaluate("document.querySelector('#pl-lis').textContent"))
         await b.close()
 asyncio.run(main())

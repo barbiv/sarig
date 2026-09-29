@@ -1,5 +1,5 @@
 import { loadState, getState, update, requestPersist } from './store.js';
-import { loadIndex, mergeMine } from './library.js';
+import { loadIndex, mergeMine, SONGS } from './library.js';
 import { loadChordDb } from './chorddb.js';
 import { setSpelling } from './theory.js';
 import { h, icon, toast } from './ui.js';
@@ -14,6 +14,7 @@ import { openEditor } from './views/editor.js';
 import { ensureAudio } from './audio.js';
 import { initNav, hasScreens, refreshTopbar } from './nav.js';
 import { showWhatsNew } from './whatsnew.js';
+import { installPolish } from './polish.js';
 import * as Mic from './mic.js';
 import { parseChordSymbol } from './theory.js';
 window.__sarig = { Mic, parseChordSymbol };
@@ -47,6 +48,11 @@ function go(id, { top = false } = {}) {
   const body = pageOf(id).querySelector('.vbody');
   if (!mounted.has(id)) { t.mod.mount(body); mounted.add(id); } else if (t.mod.onShow) t.mod.onShow();
   const changed = current !== id;
+  if (changed && current) {
+    const pg = pageOf(id);
+    pg.classList.remove('tab-enter'); void pg.offsetWidth; pg.classList.add('tab-enter');
+    clearTimeout(pg._te); pg._te = setTimeout(() => pg.classList.remove('tab-enter'), 700);
+  }
   current = id;
   window.scrollTo(0, top ? 0 : (changed ? scrollPos[id] || 0 : window.scrollY));
   refreshTopbar();
@@ -73,6 +79,7 @@ async function boot() {
       <header class="topbar"><div class="tb-inner"><b class="tb-title">${t.label}</b></div></header><div class="vbody"></div></section>`).join('')}</main>
     <nav class="tabbar" role="tablist">${TABS.map((t) => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="false">${icon(t.icon)}<span>${t.label}</span></button>`).join('')}</nav>`;
   initNav(appEl.querySelector('#pages'), () => pageOf(current));
+  installPolish();
   appEl.querySelector('.tabbar').addEventListener('click', (e) => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
     if (b.dataset.tab === current) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
@@ -84,8 +91,10 @@ async function boot() {
   app.showSongsWithChords = (basics, mode) => { go('songs'); Songs.setChordFilter(basics, mode); };
   app.refresh = () => { mergeMine(); const t = TABS.find((x) => x.id === current); if (t && mounted.has(t.id) && t.mod.onShow) t.mod.onShow(); if (mounted.has('songs')) Songs.refresh(false); };
   const hash = location.hash.slice(1);
-  go(TABS.some((t) => t.id === hash) ? hash : st.settings.tab || 'songs');
-  splash.remove();
+  const shared = /^s=(.+)$/.exec(hash);
+  go(TABS.some((t) => t.id === hash) ? hash : shared ? 'songs' : st.settings.tab || 'songs');
+  splash.classList.add('out'); setTimeout(() => splash.remove(), 320);
+  if (shared) { const sg = SONGS.find((x) => x.k === decodeURIComponent(shared[1])); if (sg) setTimeout(() => openPlayer(sg), 250); else toast('השיר ששותף לא נמצא במאגר'); }
   // storage persistence + audio unlock on first interaction
   const first = () => { requestPersist(); ensureAudio(); window.removeEventListener('pointerdown', first); };
   window.addEventListener('pointerdown', first);
@@ -108,7 +117,7 @@ function onboarding() {
     <div style="flex:1"></div>
     <button class="btn primary block" style="height:54px;font-size:18px">בואו נתחיל</button></div>`);
   document.body.append(el);
-  el.querySelector('button.btn').addEventListener('click', () => { update((s) => { s.onboarded = Date.now(); s.seenVersion = APP_VERSION; }, true); el.remove(); requestPersist(); });
+  el.querySelector('button.btn').addEventListener('click', () => { update((s) => { s.onboarded = Date.now(); s.seenVersion = APP_VERSION; }, true); el.classList.add('out'); setTimeout(() => el.remove(), 380); requestPersist(); });
 }
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

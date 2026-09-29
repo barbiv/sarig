@@ -1,7 +1,8 @@
-import { SONGS, GENRES, LANGS, filterSongs, defaultFilters, activeFilterCount } from '../library.js';
+import { SONGS, GENRES, LANGS, filterSongs, defaultFilters, activeFilterCount, loadSong } from '../library.js';
 import { chordName, keyName, ROOTS, BASIC_SUFFIX, cidBase, basicOf } from '../theory.js';
-import { getState, update, isFav, toggleFav } from '../store.js';
-import { h, esc, icon, openSheet, toast } from '../ui.js';
+import { getState, update, isFav, toggleFav, songPref, save } from '../store.js';
+import { h, esc, icon, openSheet, toast, haptic } from '../ui.js';
+import { onLongPress, actionSheet } from '../polish.js';
 import { app } from '../app.js';
 import { importFromClipboard } from '../importer.js';
 
@@ -39,7 +40,7 @@ export function mount(root) {
       <div style="display:flex;gap:8px"><button class="iconbtn" id="sg-paste" aria-label="ייבוא מהלוח">${icon('paste')}</button><button class="iconbtn" id="sg-add" aria-label="הוספת שיר">${icon('plus')}</button>
       <button class="iconbtn" id="sg-filter" aria-label="סינון">${icon('filter')}<span class="badge" id="sg-badge" hidden></span></button></div></div>
     <div id="sg-resume"></div>
-    <div class="search">${icon('search')}<input id="sg-q" type="search" placeholder="שם שיר, אמן או אקורדים (Am F C G)" autocomplete="off"><button class="clear" id="sg-qx" hidden aria-label="נקה">${icon('close')}</button></div>
+    <div class="searchrow" id="sg-sr"><div class="search">${icon('search')}<input id="sg-q" type="search" enterkeyhint="search" placeholder="שם שיר, אמן או אקורדים (Am F C G)" autocomplete="off"><button class="clear" id="sg-qx" hidden aria-label="נקה">${icon('close')}</button></div><button class="s-cancel" id="sg-qc" tabindex="-1">ביטול</button></div>
     <div class="scope" id="sg-scope"><button data-sc="all">כל השירים</button><button data-sc="fav">${icon('star')} מועדפים</button><button data-sc="recent">${icon('clock')} אחרונים</button><button data-sc="mine">השירים שלי</button></div>
     <div class="seg" id="sg-lang" style="margin-top:10px"><button data-l="all">הכל</button><button data-l="0">עברית</button><button data-l="1">אנגלית</button><button data-l="2">אחר</button></div>
     <div class="chips" id="sg-quick" style="margin-top:10px">
@@ -58,7 +59,12 @@ export function mount(root) {
   let qt;
   q.addEventListener('input', () => { qx.hidden = !q.value; clearTimeout(qt); qt = setTimeout(() => { f.q = q.value; refresh(true); }, 140); });
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') q.blur(); });
-  qx.addEventListener('click', () => { q.value = ''; qx.hidden = true; f.q = ''; refresh(true); });
+  qx.addEventListener('click', () => { q.value = ''; qx.hidden = true; f.q = ''; refresh(true); q.focus(); });
+  const sr = el.querySelector('#sg-sr');
+  q.addEventListener('focus', () => sr.classList.add('focus'));
+  q.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== q) sr.classList.remove('focus'); }, 120));
+  el.querySelector('#sg-qc').addEventListener('pointerdown', (e) => e.preventDefault());
+  el.querySelector('#sg-qc').addEventListener('click', () => { const had = !!q.value; q.value = ''; qx.hidden = true; q.blur(); sr.classList.remove('focus'); if (had) { f.q = ''; refresh(true); } });
   el.querySelector('#sg-scope').addEventListener('click', (e) => { const b = e.target.closest('[data-sc]'); if (b) setScope(b.dataset.sc); });
   el.querySelector('#sg-lang').addEventListener('click', (e) => { const b = e.target.closest('[data-l]'); if (!b) return; f.lang = b.dataset.l === 'all' ? 'all' : +b.dataset.l; refresh(true); });
   el.querySelector('#sg-quick').addEventListener('click', onQuick);
@@ -67,6 +73,7 @@ export function mount(root) {
   el.querySelector('#sg-add').addEventListener('click', () => app.openEditor(null));
   el.querySelector('#sg-paste').addEventListener('click', importFromClipboard);
   listEl.addEventListener('click', onListClick);
+  onLongPress(listEl, '.song', (row) => { const k = row.dataset.k; const sg = SONGS.find((x) => x.k === k); if (sg) songActions(sg, row); });
   window.addEventListener('scroll', () => { if (el.offsetParent !== null) requestAnimationFrame(paint); }, { passive: true });
   window.addEventListener('resize', paint);
   refresh(true);
@@ -93,6 +100,7 @@ export function onListClickFactory(getSong) {
       const fb = b.querySelector('[data-fav]');
       fb.setAttribute('aria-pressed', String(on));
       fb.innerHTML = icon('star', on ? 'fill' : '');
+      haptic();
       toast(on ? 'נוסף למועדפים' : 'הוסר מהמועדפים');
       return;
     }
@@ -152,6 +160,7 @@ export function refresh(resetScroll) {
     if (window.scrollY > top) window.scrollTo(0, Math.max(0, top));
   }
   lastRange = '';
+  listEl.classList.add('fresh'); clearTimeout(listEl._fr); listEl._fr = setTimeout(() => listEl.classList.remove('fresh'), 350);
   paint();
   update((s) => { const { q, ...rest } = f; s.settings.lastFilters = rest; });
 }
@@ -176,6 +185,33 @@ function paint() {
   let html = '';
   for (let i = a; i < b; i++) html += songRowHTML(results[i].s, { top: i * ROW, capoFit: results[i].capoFit });
   listEl.innerHTML = html;
+}
+
+// long-press menu on a song row (iOS context-menu style action sheet)
+export function songActions(sg, row) {
+  const fav = isFav(sg.k);
+  const acts = [
+    { label: 'נגינה', icon: 'play', run: () => app.openPlayer(sg) },
+    { label: 'נגינה עם הליווי המובנה', icon: 'guitar', run: () => { songPref(sg.k).mode = 'synth'; save(); app.openPlayer(sg); } },
+  ];
+  if (sg.timed) acts.push({ label: 'נגינה עם השיר המקורי', icon: 'yt', run: () => { songPref(sg.k).mode = 'yt'; save(); app.openPlayer(sg); } });
+  acts.push({ label: fav ? 'הסרה מהמועדפים' : 'הוספה למועדפים', icon: 'star', fill: !fav, run: () => {
+    const on = toggleFav(sg.k); toast(on ? 'נוסף למועדפים' : 'הוסר מהמועדפים');
+    const fb = row && row.isConnected && row.querySelector('[data-fav]'); if (fb) { fb.setAttribute('aria-pressed', String(on)); fb.innerHTML = icon('star', on ? 'fill' : ''); }
+    if (scope === 'fav') refresh(false);
+  } });
+  if (sg.mine) acts.push({ label: 'עריכת השיר', icon: 'edit', run: () => app.openEditor(sg) });
+  else acts.push({ label: 'שכפול ועריכה כשיר שלי', icon: 'edit', run: async () => { try { const model = await loadSong(sg); app.openEditor(sg, { model, importMode: true }); } catch (e) { toast('לא הצלחנו לטעון את השיר'); } } });
+  if (!sg.mine) acts.push({ label: 'שיתוף', icon: 'share', run: () => shareSong(sg) });
+  actionSheet({ title: sg.t, sub: sg.a || '', actions: acts });
+}
+export async function shareSong(sg) {
+  const url = `${location.origin}${location.pathname}#s=${encodeURIComponent(sg.k)}`;
+  const text = `${sg.t}${sg.a ? ' — ' + sg.a : ''} · לנגן בסריג`;
+  try {
+    if (navigator.share) { await navigator.share({ title: sg.t, text, url }); return; }
+    await navigator.clipboard.writeText(`${text}\n${url}`); toast('הקישור הועתק');
+  } catch (e) { /* cancelled */ }
 }
 
 export function setChordFilter(basics, mode) {

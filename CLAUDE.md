@@ -32,6 +32,10 @@
 ## ייבוא שירים
 - אין משיכה אוטומטית מאתרי אקורדים. הייבוא: סימנייה לספארי (`src/tools/bookmarklet.js`, נבנית ל-`src/bookmarklet_url.js`) + ״ייבוא מהלוח״ (`src/importer.js`). בדיקה: `build/bmtest.py`.
 
+## ממשק (HIG)
+- `src/polish.js`: מצבי לחיצה, thumb מחליק ל-`.seg`, `onLongPress`, `actionSheet`, `spinner`. `src/nav.js`: פרלקסה/החשכה ב-push/pop. `ui.recede()`: אפקט כרטיס מאחורי sheet גבוה.
+- בדיקה: `build/polishtest.py` (מעברים, לחיצה ארוכה, חיפוש, sheet, קישור שיתוף).
+
 ## עקרונות
 - ממשק בעברית RTL; שמות אקורדים LTR. נתוני המשתמש נשמרים מקומית (IndexedDB + localStorage) — לא לשבור את מבנה ה-state ב-`src/store.js` (להוסיף שדות, לא לשנות קיימים). מפתחות שירים יציבים (`db:<hash>`) — לא לשנות את `stable_key`.
 - בלי מילות שירים במאגר המובנה (זכויות יוצרים).

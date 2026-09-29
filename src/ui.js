@@ -1,5 +1,5 @@
 // Small UI toolkit: html escaping, icons, sheets, screens, toasts.
-import { lockScroll, unlockScroll } from './nav.js';
+import { lockScroll, unlockScroll, topPage } from './nav.js';
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const $ = (sel, el = document) => el.querySelector(sel);
 export const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
@@ -45,6 +45,7 @@ const P = {
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   bigplay: '<circle cx="12" cy="12" r="10"/><path d="M10 8.5v7l6-3.5z" fill="currentColor"/>',
+  stage: '<rect x="3" y="4" width="12" height="16" rx="2"/><path d="M18 4v16M21 4v16"/><circle cx="9" cy="9" r="2"/><path d="M6 15h6"/>',
   dice: '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/>',
 };
 export function icon(name, extra = '') {
@@ -73,29 +74,78 @@ export function openSheet({ title = '', body, foot = null, onClose = null, tall 
   if (foot) { const f = h('<div class="sh-foot"></div>'); if (typeof foot === 'string') f.innerHTML = foot; else f.append(foot); sh.append(f); }
   document.body.append(scrim, sh);
   lockScroll();
+  const rec = sh.offsetHeight > window.innerHeight * 0.55 ? recede() : null;
   requestAnimationFrame(() => { scrim.classList.add('on'); sh.classList.add('on'); });
   let closed = false;
   const close = () => {
     if (closed) return; closed = true;
+    sh.style.transform = '';
+    sh.style.transition = '';
     scrim.classList.remove('on'); sh.classList.remove('on');
-    setTimeout(() => { scrim.remove(); sh.remove(); }, 330);
+    rec && rec();
     unlockScroll();
+    setTimeout(() => { scrim.remove(); sh.remove(); }, 460);
     onClose && onClose();
   };
   scrim.addEventListener('click', close);
   sh.querySelector('[data-close]').addEventListener('click', close);
   // drag to close
-  let y0 = null, dy = 0;
+  let y0 = null, dy = 0, t0 = 0;
   const grab = sh.querySelector('.grab'), head = sh.querySelector('.sh-head');
   [grab, head].forEach((el) => {
-    el.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; sh.style.transition = 'none'; }, { passive: true });
-    el.addEventListener('touchmove', (e) => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
-    el.addEventListener('touchend', () => { sh.style.transition = ''; sh.style.transform = ''; if (dy > 90) close(); y0 = null; dy = 0; });
+    el.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; t0 = performance.now(); sh.style.transition = 'none'; }, { passive: true });
+    el.addEventListener('touchmove', (e) => {
+      if (y0 == null) return;
+      const d = e.touches[0].clientY - y0;
+      dy = d >= 0 ? d : -Math.sqrt(-d) * 2.2; // rubber band when pulled up
+      sh.style.transform = `translateY(${dy}px)`;
+      scrim.style.opacity = String(Math.max(0, 1 - Math.max(0, dy) / (sh.offsetHeight || 400)));
+    }, { passive: true });
+    el.addEventListener('touchend', () => {
+      if (y0 == null) return;
+      const v = dy / Math.max(1, performance.now() - t0);
+      sh.style.transition = ''; scrim.style.opacity = '';
+      if (dy > 110 || (dy > 24 && v > 0.5)) close(); else sh.style.transform = '';
+      y0 = null; dy = 0;
+    });
   });
   return { el: sh, body: bodyEl, close };
 }
 
 export { openScreen } from './nav.js';
+
+// iOS-style "card" presentation: the page behind a large sheet shrinks back and gets rounded corners.
+let recedeDepth = 0;
+export function recede() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || recedeDepth++ > 0) return () => { recedeDepth = Math.max(0, recedeDepth - 1); };
+  const pg = topPage();
+  const tb = document.body.classList.contains('has-screen') ? null : document.querySelector('.tabbar');
+  const H = window.innerHeight;
+  const els = [];
+  let top = 0, fixed = true;
+  if (pg) {
+    fixed = getComputedStyle(pg).position === 'fixed';
+    top = -pg.getBoundingClientRect().top;
+    pg.style.transformOrigin = fixed ? '50% 50%' : `50% ${top + H / 2}px`;
+    if (!fixed) pg.style.clipPath = `inset(${Math.max(0, top)}px 0 ${Math.max(0, pg.offsetHeight - top - H)}px 0 round 12px)`;
+    else pg.style.borderRadius = '12px';
+    els.push(pg);
+  }
+  if (tb) { tb.style.transformOrigin = `50% ${H / 2 - tb.getBoundingClientRect().top}px`; els.push(tb); }
+  document.documentElement.classList.add('receded');
+  requestAnimationFrame(() => els.forEach((e) => { e.classList.add('recede-anim'); e.style.transform = 'scale(.935)'; }));
+  const finish = () => {
+    document.documentElement.classList.remove('receded');
+    els.forEach((e) => { e.classList.remove('recede-anim'); e.style.transform = ''; e.style.transformOrigin = ''; e.style.clipPath = ''; e.style.borderRadius = ''; });
+  };
+  return () => {
+    recedeDepth = 0;
+    els.forEach((e) => { e.style.transform = ''; });
+    // if the page scrolled while closing (e.g. results refreshed), drop the effect at once instead of clipping the wrong area
+    requestAnimationFrame(() => { if (pg && !fixed && pg.isConnected && Math.abs(-pg.getBoundingClientRect().top - top) > 2) { els.forEach((e) => { e.style.transition = 'none'; }); finish(); requestAnimationFrame(() => els.forEach((e) => { e.style.transition = ''; })); } });
+    setTimeout(finish, 460);
+  };
+}
 export function fmtTime(sec) {
   sec = Math.max(0, Math.round(sec));
   const m = Math.floor(sec / 60), s = sec % 60;
@@ -122,4 +172,20 @@ export function relDay(ts) {
 }
 export function toggleHTML(id, checked) {
   return `<label class="toggle"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''}><span></span></label>`;
+}
+
+// Haptic tick (iOS 18+ Safari: toggling a native switch plays a system haptic)
+let hapticEl = null;
+export function haptic() {
+  try {
+    if (!hapticEl) {
+      hapticEl = document.createElement('label');
+      hapticEl.setAttribute('aria-hidden', 'true');
+      hapticEl.style.cssText = 'position:fixed;left:-100px;top:-100px;width:1px;height:1px;opacity:0;pointer-events:none';
+      hapticEl.innerHTML = '<input type="checkbox" switch>';
+      document.body.append(hapticEl);
+    }
+    hapticEl.click();
+    if (navigator.vibrate) navigator.vibrate(8);
+  } catch (e) { /* no haptics */ }
 }

@@ -11,6 +11,9 @@ import { loadYT, parseYouTubeId, ytSearchUrl, YTClock } from '../yt.js';
 import { findVideos } from '../ytlookup.js';
 import { fetchSyncedLyrics } from '../lyrics.js';
 import { app } from '../app.js';
+import { chordColor } from '../colors.js';
+import { haptic } from '../ui.js';
+import { spinner } from '../polish.js';
 import { startMic, stopMic, matchChord, resetChroma, micSupported } from '../mic.js';
 
 const PPS = 104; // lane pixels per song-second
@@ -24,7 +27,7 @@ export async function openPlayer(song) {
   if (pref.tr == null) pref.tr = 0;
   if (pref.tempo == null) pref.tempo = 1;
   if (pref.simp == null) pref.simp = st.settings.simplify || 0;
-  if (!pref.view || pref.view === 'lane' && !pref.viewSet) pref.view = 'sheet';
+  if (!pref.viewSet) pref.view = 'stage';
   pushRecent(song.k);
 
   const favOn = isFav(song.k);
@@ -34,7 +37,7 @@ export async function openPlayer(song) {
               <button class="iconbtn" data-more aria-label="פרטים והגדרות">${icon('info')}</button>`,
     onClose: () => teardown(),
   });
-  sc.body.innerHTML = '<div class="empty"><b>טוען שיר…</b></div>';
+  sc.body.innerHTML = spinner('טוען שיר…');
 
   let model;
   try { model = await loadSong(song); } catch (e) {
@@ -73,9 +76,8 @@ export async function openPlayer(song) {
     <div class="pl-src"><div class="seg" id="pl-mode"><button data-mode="synth">${icon('guitar')} ליווי מובנה</button><button data-mode="yt">${icon('yt')} השיר המקורי</button></div>
       <button class="iconbtn sm" id="pl-mic" aria-label="האזנה לנגינה" aria-pressed="false">${icon('mic')}</button>
       <button class="iconbtn sm" id="pl-view" aria-label="החלפת תצוגה"></button></div>
-    <div id="pl-yt" hidden></div>
     <div class="pl-boxes" id="pl-boxes"></div>
-    <div class="pl-stage" id="pl-stage"></div>
+    <div class="pl-stage" id="pl-stage"><div id="pl-yt" hidden></div><div class="pl-view" id="pl-vw"></div></div>
     <div class="pl-info"><span class="lis" id="pl-lis" hidden></span><div class="beatdots" id="pl-dots"></div><div class="next" id="pl-next"></div><div class="strum" id="pl-strum"></div></div>
     <div class="pl-controls">
       <div class="scrub"><span id="pl-t" class="num">0:00</span><input type="range" id="pl-seek" min="0" max="${Math.ceil(model.dur)}" step="0.1" value="0" aria-label="מיקום בשיר"><span id="pl-d" class="num">${fmtTime(model.dur)}</span></div>
@@ -88,7 +90,8 @@ export async function openPlayer(song) {
       </div>
     </div>`;
   const $ = (s) => sc.body.querySelector(s);
-  const stage = $('#pl-stage');
+  const stage = $('#pl-vw');
+  const stageWrap = $('#pl-stage');
 
   // ------------------------------------------------------------ chord boxes (all chords in the song)
   let boxEls = new Map();
@@ -268,16 +271,230 @@ export async function openPlayer(song) {
     stage.querySelector('#pl-grid').addEventListener('click', (e) => { const c = e.target.closest('[data-b]'); if (c) seek(bars[+c.dataset.b].a); });
     S.curBar = -1;
   }
+  const VIEWS = ['stage', 'sheet', 'lane', 'grid'];
+  const VIEW_NAME = { stage: 'במה', sheet: 'מילים ואקורדים', lane: 'טיימליין', grid: 'תיבות' };
   function buildStage() {
-    laneStrip = null; gridCells = []; S.lineEls = null;
-    if (pref.view === 'grid') buildGrid(); else if (pref.view === 'lane') buildLane(); else renderSheet();
-    const nextView = { sheet: 'lane', lane: 'grid', grid: 'sheet' }[pref.view] || 'lane';
-    $('#pl-view').innerHTML = icon({ sheet: 'lane', lane: 'grid', grid: 'lines' }[pref.view] || 'grid');
-    $('#pl-view').setAttribute('aria-label', 'תצוגה: ' + { sheet: 'טיימליין', lane: 'תיבות', grid: 'מילים ואקורדים' }[pref.view]);
+    laneStrip = null; gridCells = []; S.lineEls = null; S.stg = null;
+    stageWrap.className = 'pl-stage v-' + pref.view;
+    sc.body.classList.toggle('stage-on', pref.view === 'stage');
+    if (pref.view === 'grid') buildGrid(); else if (pref.view === 'lane') buildLane(); else if (pref.view === 'sheet') renderSheet(); else buildStageView();
+    const nxt = VIEWS[(VIEWS.indexOf(pref.view) + 1) % VIEWS.length];
+    $('#pl-view').innerHTML = icon({ stage: 'lines', sheet: 'lane', lane: 'grid', grid: 'stage' }[pref.view] || 'grid');
+    $('#pl-view').setAttribute('aria-label', 'מעבר לתצוגת ' + VIEW_NAME[nxt]);
     buildBoxes();
     S.curEv = -2;
     frame(true);
-    void nextView;
+  }
+
+  // ------------------------------------------------------------ stage view (performance screen)
+  const NECK = { top: 40, fret: 50, x0: 16, dx: 18, frets: 5 };
+  function neckSVG() {
+    const lefty = getState().settings.lefty;
+    let o = `<svg class="fb" viewBox="0 0 122 ${NECK.top + NECK.fret * NECK.frets + 8}" aria-hidden="true"><defs><linearGradient id="fbw" x1="0" x2="1"><stop offset="0" stop-color="#1a1411"/><stop offset=".5" stop-color="#2a211b"/><stop offset="1" stop-color="#1a1411"/></linearGradient></defs>`;
+    o += `<rect x="6" y="${NECK.top - 6}" width="110" height="${NECK.fret * NECK.frets + 14}" rx="6" fill="url(#fbw)"/>`;
+    o += `<rect x="6" y="${NECK.top - 6}" width="110" height="6" rx="2" class="fb-nut" id="fb-nut"/>`;
+    for (let k = 1; k <= NECK.frets; k++) o += `<line x1="6" x2="116" y1="${NECK.top + k * NECK.fret}" y2="${NECK.top + k * NECK.fret}" class="fb-fret"/>`;
+    for (let k of [3, 5]) if (k <= NECK.frets) o += `<circle cx="61" cy="${NECK.top + (k - 0.5) * NECK.fret}" r="3.2" class="fb-inl"/>`;
+    for (let s2 = 0; s2 < 6; s2++) { const x = NECK.x0 + (lefty ? 5 - s2 : s2) * NECK.dx; o += `<line x1="${x}" x2="${x}" y1="${NECK.top - 6}" y2="${NECK.top + NECK.fret * NECK.frets + 8}" class="fb-str" style="stroke-width:${2.2 - s2 * 0.25}"/>`; }
+    o += `<text x="2" y="${NECK.top + NECK.fret * 0.62}" class="fb-fn" id="fb-fn"></text>`;
+    o += `<rect id="fb-barre" x="0" y="0" width="0" height="15" rx="7.5" class="fb-dot" style="opacity:0"/>`;
+    for (let s2 = 0; s2 < 6; s2++) {
+      const x = NECK.x0 + (lefty ? 5 - s2 : s2) * NECK.dx;
+      o += `<text x="${x}" y="22" class="fb-top" id="fb-t${s2}"></text>`;
+      o += `<g class="fb-g" id="fb-d${s2}" style="transform:translate(${x}px,${NECK.top + 25}px);opacity:0"><circle r="8.2" class="fb-dot"/></g>`;
+    }
+    return o + '</svg>';
+  }
+  function setNeck(c) {
+    const st2 = S.stg; if (!st2) return;
+    const v = c >= 0 ? voiceOf(c) : null;
+    const lefty = getState().settings.lefty;
+    const nut = stage.querySelector('#fb-nut'), fn = stage.querySelector('#fb-fn'), bar = stage.querySelector('#fb-barre');
+    if (!v) { for (let s2 = 0; s2 < 6; s2++) { stage.querySelector('#fb-t' + s2).textContent = ''; stage.querySelector('#fb-d' + s2).style.opacity = 0; } bar.style.opacity = 0; return; }
+    const fretted = v.f.filter((x) => x > 0);
+    const maxF = fretted.length ? Math.max(...fretted) : 0, minF = fretted.length ? Math.min(...fretted) : 1;
+    let start = maxF <= NECK.frets ? 1 : minF;
+    if (maxF - start >= NECK.frets) start = maxF - NECK.frets + 1;
+    nut.classList.toggle('capo', start === 1 && pref.capo > 0);
+    nut.style.opacity = start === 1 ? 1 : 0.15;
+    fn.textContent = start > 1 ? String(start + pref.capo) : (pref.capo ? '' : '');
+    const barreF = v.r && v.r.length ? v.r[0] : null;
+    for (let s2 = 0; s2 < 6; s2++) {
+      const f = v.f[s2];
+      const x = NECK.x0 + (lefty ? 5 - s2 : s2) * NECK.dx;
+      const t = stage.querySelector('#fb-t' + s2), d = stage.querySelector('#fb-d' + s2);
+      t.textContent = f < 0 ? '✕' : f === 0 ? '○' : String(v.g[s2] || '');
+      t.classList.toggle('mute', f < 0);
+      if (f > 0 && !(barreF === f && v.g[s2] === 1)) {
+        d.style.transform = `translate(${x}px,${NECK.top + (f - start + 0.5) * NECK.fret}px)`;
+        d.style.opacity = 1;
+      } else d.style.opacity = 0;
+    }
+    if (barreF != null) {
+      const strs = v.f.map((f, i) => (f === barreF && v.g[i] === 1 ? i : -1)).filter((i) => i >= 0);
+      const xs = strs.map((i) => NECK.x0 + (lefty ? 5 - i : i) * NECK.dx);
+      const a = Math.min(...xs), b = Math.max(...xs);
+      bar.setAttribute('x', a - 8); bar.setAttribute('width', b - a + 16);
+      bar.setAttribute('y', NECK.top + (barreF - start + 0.5) * NECK.fret - 7.5);
+      bar.style.opacity = 1;
+    } else bar.style.opacity = 0;
+  }
+  function bubble(c, cls = '') {
+    const col = chordColor(disp(c));
+    return `<span class="bub ${cls}" style="--bc:${col.bg}">${esc(nameOf(c))}</span>`;
+  }
+  let measureCtx = null;
+  function textW(txt, px) {
+    if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+    measureCtx.font = `italic 700 ${px}px ${getComputedStyle(document.body).fontFamily}`;
+    return measureCtx.measureText(txt).width;
+  }
+  // split lyric lines that would not fit on one stage row (keeps timing and chord positions)
+  function splitForStage(avail) {
+    const out = [];
+    for (const l of lines) {
+      if (l.kind !== 'lyric' || textW(l.text, 22) <= avail) { out.push(l); continue; }
+      const words = l.text.split(/\s+/);
+      const parts = Math.ceil(textW(l.text, 22) / avail);
+      const total = l.text.length;
+      const target = total / parts;
+      const chunks = []; let cur = [];
+      for (const w of words) { cur.push(w); if (cur.join(' ').length >= target && chunks.length < parts - 1) { chunks.push(cur.join(' ')); cur = []; } }
+      if (cur.length) chunks.push(cur.join(' '));
+      let a = 0;
+      chunks.forEach((c, ci) => {
+        const b = ci === chunks.length - 1 ? 1 : a + (c.length + 1) / (total + 1);
+        const t0 = l.t0 + a * (l.t1 - l.t0), t1 = l.t0 + b * (l.t1 - l.t0);
+        const chords = l.chords.filter((x) => x.pos >= a - 1e-6 && (x.pos < b || ci === chunks.length - 1)).map((x) => ({ ...x, pos: (x.pos - a) / (b - a) }));
+        out.push({ ...l, text: c, t0, t1, chords, label: ci === 0 ? l.label : null });
+        a = b;
+      });
+    }
+    lines = out;
+  }
+  function buildStageView() {
+    buildLines();
+    stage.innerHTML = '<div class="stg neck-r"><div class="stg-main"><div class="stg-lyr" id="stg-lyr"></div><div class="stg-neck"></div></div></div>';
+    const probeW = stage.querySelector('#stg-lyr').clientWidth || 240;
+    splitForStage(probeW - 28);
+    const rtlSong = lines.some((l) => l.kind === 'lyric' && isHeb(l.text));
+    const bpmNow = Math.round(model.bpm * pref.tempo);
+    stage.innerHTML = `<div class="stg ${rtlSong ? 'neck-l' : 'neck-r'}">
+      <div class="stg-prog"><i id="stg-pf"></i>${model.sections.map((x) => `<b style="left:${(100 * x.t / model.dur).toFixed(2)}%"></b>`).join('')}</div>
+      <div class="stg-top"><div class="stg-bpm"><span>BPM</span><b id="stg-bpmv">${bpmNow}</b><button data-bt="-0.05" aria-label="האטה">−</button><button data-bt="0.05" aria-label="האצה">+</button>${pref.tempo !== 1 ? '<button data-bt="0" class="rst">איפוס</button>' : ''}</div></div>
+      <div class="stg-main">
+        <div class="stg-lyr" id="stg-lyr"><div class="stg-rows" id="stg-rows"></div><div class="stg-band" id="stg-band"></div><div class="stg-head" id="stg-head"></div></div>
+        <div class="stg-neck"><div class="stg-name" id="stg-name"></div>${neckSVG()}<div class="stg-next"><span>הבא</span><div id="stg-nx"></div></div></div>
+      </div></div>`;
+    stageWrap.classList.toggle('nl', rtlSong);
+    const lyr = stage.querySelector('#stg-lyr'), rowsEl = stage.querySelector('#stg-rows');
+    const W = lyr.clientWidth || 240, PAD = 14, avail = W - PAD * 2;
+    const ROWH = Math.max(96, Math.min(132, (lyr.clientHeight || 420) / 3.4));
+    let html = '';
+    lines.forEach((l, i) => {
+      const dir = l.kind === 'lyric' ? (isHeb(l.text) ? 'rtl' : 'ltr') : (rtlSong ? 'rtl' : 'ltr');
+      const content = l.kind === 'lyric' ? `<span class="sw">${esc(l.text)}</span>`
+        : `<span class="sbars">${l.bars.map((b) => `<span class="sbar">${Array.from({ length: Math.max(1, Math.min(8, b.nb)) }, () => '<i></i>').join('')}</span>`).join('')}</span>`;
+      html += `<div class="srow ${l.kind}" data-l="${i}" dir="${dir}" style="top:${i * ROWH}px;height:${ROWH}px">${l.label ? `<em class="slab">${esc(l.label)}</em>` : ''}<div class="sbubs"></div><div class="stx">${content}</div></div>`;
+    });
+    rowsEl.innerHTML = html || '<div class="empty" style="color:#bbb">אין נתונים לשיר הזה</div>';
+    const rows = [...rowsEl.querySelectorAll('.srow')];
+    const meta = rows.map((row, i) => {
+      const l = lines[i];
+      let w = avail;
+      if (l.kind === 'lyric') {
+        const sw = row.querySelector('.sw');
+        let fs = 24;
+        sw.style.fontSize = fs + 'px';
+        let ww = sw.offsetWidth;
+        if (ww > avail) { fs = Math.max(16, Math.floor(fs * avail / ww)); sw.style.fontSize = fs + 'px'; ww = sw.offsetWidth; }
+        w = Math.max(40, Math.min(avail, ww));
+      } else row.querySelector('.sbars').style.width = avail + 'px';
+      // chord bubbles at their positions along the line
+      const chords = l.kind === 'lyric' ? l.chords.map((c) => ({ k: c.k, pos: c.pos }))
+        : l.bars.flatMap((b) => b.cs.map((k) => ({ k, pos: (Math.max(ev[k].t, l.t0) - l.t0) / (l.t1 - l.t0) })));
+      const side = row.getAttribute('dir') === 'rtl' ? 'right' : 'left';
+      const cs = chords.filter((c) => ev[c.k].c >= 0);
+      const sb = row.querySelector('.sbubs');
+      sb.innerHTML = cs.map((c) => `<span class="bwrap" data-k="${c.k}">${bubble(ev[c.k].c)}</span>`).join('');
+      // lay bubbles out in pixels using their real widths: keep order, never overlap, stay inside the row
+      const wr = [...sb.children];
+      let bw = wr.map((x) => (x.firstChild.offsetWidth || 40) * 1.12);
+      const need = () => bw.reduce((a2, b2) => a2 + b2 + 3, 0);
+      if (need() > W - 4) { sb.classList.add('dense'); bw = wr.map((x) => (x.firstChild.offsetWidth || 32) * 1.12); }
+      if (need() > W - 4) { const f2 = (W - 4) / need(); bw = bw.map((x) => x * f2); }
+      const xs = cs.map((c) => PAD + Math.min(c.pos, 1) * w);
+      for (let q = 0; q < xs.length; q++) {
+        if (q === 0) xs[q] = Math.max(xs[q], bw[0] / 2 + 2);
+        else xs[q] = Math.max(xs[q], xs[q - 1] + (bw[q - 1] + bw[q]) / 2 + 3);
+      }
+      for (let q = xs.length - 1; q >= 0; q--) {
+        const lim = q === xs.length - 1 ? W - bw[q] / 2 - 2 : xs[q + 1] - (bw[q] + bw[q + 1]) / 2 - 3;
+        if (xs[q] > lim) xs[q] = lim;
+      }
+      wr.forEach((x, q) => { x.style[side] = xs[q].toFixed(1) + 'px'; });
+      return { row, w, rtl: side === 'right', bubs: [...row.querySelectorAll('.bwrap')] };
+    });
+    meta.forEach((m) => { m.beats = [...m.row.querySelectorAll('.sbar i')]; });
+    S.stg = { lyr, rowsEl, rows, meta, ROWH, W, PAD, cur: -2, bub: null, lastC: -9, nx: -9,
+      head: lyr.querySelector('#stg-head'), band: lyr.querySelector('#stg-band'), pf: stage.querySelector('#stg-pf'), name: stage.querySelector('#stg-name'), nxEl: stage.querySelector('#stg-nx'), lastBeat: -1 };
+    stage.querySelector('.stg-bpm').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-bt]'); if (!b) return;
+      pref.tempo = +b.dataset.bt === 0 ? 1 : Math.round(Math.max(0.4, Math.min(1.6, pref.tempo + +b.dataset.bt)) * 100) / 100;
+      retime(); save(); setLabel(); haptic();
+      stage.querySelector('#stg-bpmv').textContent = Math.round(model.bpm * pref.tempo);
+      const has = stage.querySelector('.stg-bpm .rst');
+      if (pref.tempo !== 1 && !has) b.parentNode.insertAdjacentHTML('beforeend', '<button data-bt="0" class="rst">איפוס</button>');
+      if (pref.tempo === 1 && has) has.remove();
+    });
+    rowsEl.addEventListener('click', (e) => { const r = e.target.closest('.srow'); if (r) seek(lines[+r.dataset.l].t0); });
+  }
+  function stageFrame(tt, force, i) {
+    const G = S.stg; if (!G) return;
+    let li = -1;
+    for (let k = Math.max(0, G.cur - 1); k < lines.length; k++) { if (tt >= lines[k].t0 - 0.02 && tt < lines[k].t1) { li = k; break; } if (lines[k].t0 > tt) { li = Math.max(0, k - 1); break; } }
+    if (li < 0) { for (let k = 0; k < lines.length; k++) if (tt >= lines[k].t0 - 0.02 && tt < lines[k].t1) { li = k; break; } }
+    if (li < 0 && lines.length) li = tt >= lines[lines.length - 1].t0 ? lines.length - 1 : 0;
+    if (li !== G.cur || force) {
+      G.rows.forEach((r, k) => { r.classList.toggle('cur', k === li); r.classList.toggle('past', k < li); r.classList.toggle('next', k === li + 1); r.classList.toggle('far', k > li + 1 || k < li - 1); });
+      const y = G.lyr.clientHeight * 0.34 - (li + 0.5) * G.ROWH;
+      G.rowsEl.style.transform = `translate3d(0,${y.toFixed(1)}px,0)`;
+      if (force) { G.rowsEl.style.transition = 'none'; requestAnimationFrame(() => { G.rowsEl.style.transition = ''; }); }
+      G.cur = li; G.lastBeat = -1;
+    }
+    const L = lines[li], M = G.meta[li];
+    const head = G.head, band = G.band;
+    if (L && M) {
+      const p = Math.max(0, Math.min(1, (tt - L.t0) / (L.t1 - L.t0)));
+      const s2 = G.PAD + p * M.w;
+      const x = M.rtl ? G.W - s2 : s2;
+      head.style.transform = `translate3d(${x.toFixed(1)}px,0,0)`;
+      band.style.left = M.rtl ? `${x}px` : '0px';
+      band.style.width = `${M.rtl ? G.W - x : x}px`;
+      band.classList.toggle('rtl', M.rtl);
+      M.row.style.setProperty('--p', (p * 100).toFixed(1) + '%');
+      const beatsEl = M.beats;
+      if (beatsEl.length) { const n = beatsEl.length, on = Math.floor(p * n); if (on !== G.lastBeat || force) { G.lastBeat = on; beatsEl.forEach((b, k) => b.classList.toggle('on', k <= on)); } }
+    }
+    // current chord bubble pulse + neck + next
+    const e = ev[i];
+    const curC = e && e.c >= 0 ? e.c : (i < 0 ? (ev.find((x) => x.c >= 0)?.c ?? -1) : -1);
+    if (i !== G.bubIdx || force) {
+      if (G.bub) G.bub.classList.remove('hit');
+      const w = G.rowsEl.querySelector(`.bwrap[data-k="${i}"]`);
+      if (w) { w.classList.remove('hit'); void w.offsetWidth; w.classList.add('hit'); }
+      G.bub = w; G.bubIdx = i;
+    }
+    if (curC !== G.lastC || force) {
+      G.lastC = curC;
+      setNeck(curC);
+      const nm = G.name;
+      nm.innerHTML = curC >= 0 ? bubble(curC, 'big') + (pref.capo ? `<small>צורת ${esc(chordName(shape(curC)))} · קאפו ${pref.capo}</small>` : '') : '';
+    }
+    let n = i + 1; while (n < ev.length && (ev[n].c < 0 || (curC >= 0 && nameOf(ev[n].c) === nameOf(curC)))) n++;
+    const nextC = n < ev.length ? ev[n].c : -1;
+    if (nextC !== G.nx || force) { G.nx = nextC; G.nxEl.innerHTML = nextC >= 0 ? bubble(nextC) : ''; }
+    const pf = G.pf; if (pf) pf.style.width = `${(100 * tt / model.dur).toFixed(2)}%`;
   }
 
   // ------------------------------------------------------------ synth scheduler
@@ -339,6 +556,7 @@ export async function openPlayer(song) {
     if (pref.mode === 'yt') {
       if (!S.ytc || !S.ytReady) { toast('הסרטון עדיין נטען…'); return; }
       S.ytc.play();
+      setTimeout(() => { if (!S.closed && S.ytc && !S.ytc.playing) { $('#pl-yt').classList.add('needtap'); } }, 1600);
       return;
     }
     ensureAudio();
@@ -401,9 +619,14 @@ export async function openPlayer(song) {
     S.songT0 = t; S.ctxT0 = ctx.currentTime; S.rate = pref.tempo;
     S.schedIdx = Math.max(0, beatAt(t) + 1);
   }
+  let lastIcon = null;
   function setPlayIcon() {
     const p = isPlaying();
-    $('#pl-play').innerHTML = icon(p ? 'pause' : 'play');
+    const b = $('#pl-play');
+    if (lastIcon === p) return;
+    if (lastIcon !== null) { b.classList.remove('flip'); void b.offsetWidth; b.classList.add('flip'); }
+    lastIcon = p;
+    b.innerHTML = icon(p ? 'pause' : 'play');
     $('#pl-play').setAttribute('aria-label', p ? 'השהה' : 'נגן');
   }
 
@@ -435,6 +658,7 @@ export async function openPlayer(song) {
     if (!playing) S.t = tt;
     const i = eventAt(tt);
 
+    if (pref.view === 'stage') stageFrame(tt, force, i);
     // sheet
     if (S.lineEls && pref.view === 'sheet') {
       let li = S.curLine;
@@ -570,6 +794,8 @@ export async function openPlayer(song) {
     S.listen.judged.set(idx, ok);
     const chip = S.chipEls && S.chipEls.get(idx);
     if (chip) chip.classList.add(ok ? 'ok' : 'bad');
+    const bw = S.stg && S.stg.rowsEl.querySelector(`.bwrap[data-k="${idx}"]`);
+    if (bw) bw.classList.add(ok ? 'ok' : 'bad');
   }
   function accuracy() {
     const j = [...S.listen.judged.values()];
@@ -602,11 +828,12 @@ export async function openPlayer(song) {
     if (S.loop) { S.loop = null; $('#pl-loop').setAttribute('aria-pressed', 'false'); drawLoop(); toast('הלולאה בוטלה'); return; }
     const t = curTime();
     let a = 0, b = model.dur;
-    const L = pref.view === 'sheet' && lines[S.curLine];
+    const curL = pref.view === 'sheet' ? S.curLine : pref.view === 'stage' && S.stg ? S.stg.cur : -1;
+    const L = curL >= 0 && lines[curL];
     const secs = model.sections;
     const si = secs.findIndex((s, k) => s.t <= t + 0.01 && (k + 1 >= secs.length || secs[k + 1].t > t));
     if (si >= 0) { a = secs[si].t; b = si + 1 < secs.length ? secs[si + 1].t : model.dur; }
-    else if (L) { a = L.t0; b = L.t1; const L2 = lines[S.curLine + 1]; if (L2 && b - a < 6) b = L2.t1; }
+    else if (L) { a = L.t0; b = L.t1; const L2 = lines[curL + 1]; if (L2 && b - a < 6) b = L2.t1; }
     else { buildBars(); const bi = Math.max(0, bars.findIndex((x) => t >= x.a && t < x.b)); a = bars[bi] ? bars[bi].a : 0; const e = bars[Math.min(bars.length - 1, bi + 3)]; b = e ? e.b : model.dur; }
     S.loop = { a, b };
     $('#pl-loop').setAttribute('aria-pressed', 'true');
@@ -690,7 +917,7 @@ export async function openPlayer(song) {
   }
 
   // ------------------------------------------------------------ controls
-  $('#pl-play').addEventListener('click', () => { if (isPlaying()) pause(); else play(); });
+  $('#pl-play').addEventListener('click', () => { haptic(); if (isPlaying()) pause(); else play(); });
   $('#pl-back5').addEventListener('click', () => seek(curTime() - 5));
   $('#pl-loop').addEventListener('click', toggleLoop);
   $('#pl-metro').addEventListener('click', () => { update((s) => { s.settings.metronome = !s.settings.metronome; }); setLabel(); toast(getState().settings.metronome ? 'מטרונום פועל' : 'מטרונום כבוי'); });
@@ -699,13 +926,15 @@ export async function openPlayer(song) {
   $('#pl-seek').addEventListener('input', (e) => { S.t = +e.target.value; if (!isPlaying()) frame(true); });
   $('#pl-seek').addEventListener('change', (e) => seek(+e.target.value));
   $('#pl-view').addEventListener('click', () => {
-    pref.view = { sheet: 'lane', lane: 'grid', grid: 'sheet' }[pref.view] || 'sheet'; pref.viewSet = true; save();
-    buildStage();
-    toast({ sheet: 'תצוגה: מילים ואקורדים', lane: 'תצוגה: טיימליין', grid: 'תצוגה: תיבות' }[pref.view]);
+    pref.view = VIEWS[(VIEWS.indexOf(pref.view) + 1) % VIEWS.length]; pref.viewSet = true; save();
+    stage.classList.add('swap'); setTimeout(() => stage.classList.remove('swap'), 260);
+    buildStage(); haptic();
+    toast('תצוגה: ' + VIEW_NAME[pref.view]);
   });
   $('#pl-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (!b || b.dataset.mode === pref.mode) return; setMode(b.dataset.mode); });
   sc.el.querySelector('[data-fav]').addEventListener('click', (e) => {
-    const on = toggleFav(song.k); const b = e.currentTarget; b.innerHTML = icon('star', on ? 'fill' : ''); b.style.color = on ? 'var(--accent)' : 'inherit';
+    const on = toggleFav(song.k); const b = e.currentTarget; b.innerHTML = icon('star', on ? 'fill' : ''); b.style.color = on ? 'var(--accent)' : 'inherit'; haptic();
+    if (on) { b.classList.remove('popped'); void b.offsetWidth; b.classList.add('popped'); }
     toast(on ? 'נשמר במועדפים' : 'הוסר מהמועדפים');
   });
   sc.el.querySelector('[data-more]').addEventListener('click', openMore);
@@ -718,6 +947,14 @@ export async function openPlayer(song) {
   document.addEventListener('keydown', onKey);
   const onVis = () => { if (document.visibilityState === 'hidden' && pref.mode === 'synth') pause(); };
   document.addEventListener('visibilitychange', onVis);
+  // rotation / resize: rebuild the layout-dependent views
+  let rsT = 0, lastW = window.innerWidth, lastH = window.innerHeight;
+  const onResize = () => { clearTimeout(rsT); rsT = setTimeout(() => {
+    if (S.closed || (Math.abs(window.innerWidth - lastW) < 2 && Math.abs(window.innerHeight - lastH) < 60)) return;
+    lastW = window.innerWidth; lastH = window.innerHeight;
+    if (pref.view === 'stage' || pref.view === 'lane') buildStage();
+  }, 180); };
+  window.addEventListener('resize', onResize);
 
   // ------------------------------------------------------------ YouTube (original recording)
   function setMode(m) {
@@ -742,7 +979,7 @@ export async function openPlayer(song) {
     }
     if (!S.ytCands.length) { const r = await findVideos(song, { duration: model.timed ? model.dur : 0 }).catch(() => ({ list: [] })); S.ytCands = r.list || []; S.ytIdx = Math.max(0, S.ytCands.findIndex((x) => x[0] === pref.yt)); }
     const auto = pref.ytAuto && model.timed;
-    box.innerHTML = `<div class="yt-wrap${pref.ytMini ? ' mini' : ''}"><div id="yt-el"></div></div>
+    box.innerHTML = `<div class="yt-wrap${pref.ytMini ? ' mini' : ''}"><div id="yt-el"></div><div class="yt-tap">${icon('play')} הקישו על הסרטון כדי להתחיל</div></div>
       <div class="ytbar"><span class="pill ${model.timed ? 'sync' : ''}">${model.timed ? (auto && !pref.offSet ? 'סנכרון אוטומטי' : 'מסונכרן') : 'סנכרון ידני'}</span>
         <button class="lnk" data-sync>${icon('sync')} כוונון</button><button class="lnk" data-other>סרטון אחר</button><button class="lnk" data-mini>${pref.ytMini ? 'הגדלה' : 'הקטנה'}</button></div>
       <div class="syncbar" hidden><div class="r"><span>היסט: <span class="off" id="yt-off">${(pref.off || 0).toFixed(2)}s</span></span>
@@ -757,7 +994,7 @@ export async function openPlayer(song) {
       S.ytReady = false;
       S.ytc = new YTClock(box.querySelector('#yt-el'), pref.yt, {
         onReady: () => { S.ytReady = true; if (pref.tempo !== 1) pref.tempo = S.ytc.setRate(pref.tempo); setLabel(); if (pref.lastT > 5 && pref.lastT < model.dur - 5) S.ytc.seek(pref.lastT + (pref.off || 0)); },
-        onState: (s) => { setPlayIcon(); if (s === 1) { S.lastTick = performance.now(); loop(); } else frame(true); },
+        onState: (s) => { setPlayIcon(); if (s === 1) { box.classList.remove('needtap'); S.lastTick = performance.now(); loop(); } else frame(true); },
         onError: () => {
           if (S.ytIdx + 1 < S.ytCands.length) { S.ytIdx++; pref.yt = S.ytCands[S.ytIdx][0]; save(); showYT(); toast('הסרטון לא זמין — מנסה סרטון אחר'); }
           else { const w = box.querySelector('.yt-wrap'); if (w) w.innerHTML = '<div class="empty" style="color:#ddd;padding:16px">הסרטון לא מאפשר ניגון מחוץ ליוטיוב. בחרו ״סרטון אחר״.</div>'; }
@@ -829,7 +1066,7 @@ export async function openPlayer(song) {
     const L = r.lines;
     model.sheet = L.map((l, k) => ({ text: l.text, t0: l.t, t1: k + 1 < L.length ? L[k + 1].t : Math.min(model.dur, l.t + 6) })).filter((l) => l.text || l.t1 - l.t0 > 0);
     model.lyricsSrc = r.src;
-    if (pref.view === 'sheet') buildStage();
+    if (pref.view === 'sheet' || pref.view === 'stage') buildStage();
     toast('נמצאו מילים מסונכרנות');
   }
 
@@ -864,6 +1101,7 @@ export async function openPlayer(song) {
     clearInterval(S.timer); cancelAnimationFrame(S.raf);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('visibilitychange', onVis);
+    window.removeEventListener('resize', onResize);
     releaseWake();
     update((s) => { s.lastSong = { k: song.k, t: Math.round(pref.lastT || 0), at: Date.now() }; });
     const acc = S.listen.on ? accuracy() : null;

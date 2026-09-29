@@ -6,6 +6,22 @@ const stack = []; // pushed screens, top = last
 let pagesEl = null;
 let tabPageFn = () => null; // returns the active tab page element
 let ignorePop = 0;
+let dimEl = null;
+const PARK = 0.3; // how far the page underneath slides while a screen is pushed (iOS parallax)
+const EASE = 'cubic-bezier(.32,.72,0,1)';
+const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function dim(v, dur) {
+  if (!dimEl) return;
+  if (dimEl.style.display !== 'block') { dimEl.style.transition = 'none'; dimEl.style.opacity = '0'; dimEl.style.display = 'block'; void dimEl.offsetWidth; }
+  dimEl.style.transition = dur ? `opacity ${dur}ms ${EASE}` : 'none';
+  dimEl.style.opacity = String(v);
+  if (!v) setTimeout(() => { if (dimEl.style.opacity === '0') dimEl.style.display = 'none'; }, dur + 30);
+}
+function park(pg, frac, dur) {
+  if (!pg) return;
+  pg.style.transition = dur ? `transform ${dur}ms ${EASE}` : 'none';
+  pg.style.transform = frac ? `translate3d(${(frac * 100).toFixed(2)}%,0,0)` : '';
+}
 
 export function initNav(container, getActiveTabPage) {
   pagesEl = container;
@@ -16,6 +32,7 @@ export function initNav(container, getActiveTabPage) {
     if (top) top.close(true);
   });
   window.addEventListener('scroll', onScroll, { passive: true });
+  dimEl = document.createElement('div'); dimEl.className = 'navdim'; document.body.append(dimEl);
   installSwipeBack();
 }
 export function topPage() { return stack.length ? stack[stack.length - 1].el : tabPageFn(); }
@@ -61,14 +78,16 @@ export function openScreen({ cls = '', title = '', sub = '', actions = '', onClo
   stack.push(entry);
   history.pushState({ sarig: stack.length }, '');
   setTabbar();
-  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('in')));
+  const still = reduce();
+  requestAnimationFrame(() => requestAnimationFrame(() => { el.classList.add('in'); if (!still) { park(prevEl, PARK, 360); dim(1, 360); } }));
   setTimeout(() => {
     if (entry.closed) return;
+    park(prevEl, 0, 0); dim(0, 0);
     prevEl.classList.add('hidden-page');
     el.classList.remove('entering', 'in');
     window.scrollTo(0, 0);
     onScroll();
-  }, 340);
+  }, still ? 20 : 370);
   el.querySelector('[data-back]').addEventListener('click', () => entry.close(false));
   return {
     el, body: el.querySelector('.sc-body'),
@@ -85,13 +104,16 @@ function animateOut(entry) {
   if (!fixed) el.style.top = `${-y}px`;
   prevEl.classList.remove('hidden-page', 'under');
   prevEl.style.top = '';
+  const still = reduce();
+  if (!still) { park(prevEl, PARK, 0); dim(1, 0); }
   window.scrollTo(0, prevY);
   onScroll();
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    el.style.transition = 'transform .28s cubic-bezier(.2,.8,.2,1)';
+    el.style.transition = `transform ${still ? 0 : 340}ms ${EASE}`;
     el.style.transform = 'translateX(-100%)';
+    if (!still) { park(prevEl, 0, 340); dim(0, 340); }
   }));
-  setTimeout(() => el.remove(), 320);
+  setTimeout(() => { el.remove(); park(prevEl, 0, 0); }, still ? 30 : 380);
 }
 function finishSwipeOut(entry, dx) {
   const { el, prevEl, prevY } = entry;
@@ -102,10 +124,11 @@ function finishSwipeOut(entry, dx) {
   window.scrollTo(0, prevY);
   onScroll();
   requestAnimationFrame(() => {
-    el.style.transition = 'transform .22s ease-out';
+    el.style.transition = `transform .26s ${EASE}`;
     el.style.transform = `translateX(${dx < 0 ? '-100%' : '100%'})`;
+    park(prevEl, 0, 260); dim(0, 260);
   });
-  setTimeout(() => el.remove(), 240);
+  setTimeout(() => { el.remove(); park(prevEl, 0, 0); }, 290);
 }
 
 // ---------------------------------------------------------------- swipe back from either screen edge
@@ -140,6 +163,9 @@ function installSwipeBack() {
     }
     s.dx = s.fromRight ? Math.min(0, dx) : Math.max(0, dx);
     s.top.el.style.transform = `translateX(${s.dx}px)`;
+    const prog = Math.min(1, Math.abs(s.dx) / window.innerWidth);
+    park(s.top.prevEl, PARK * (1 - prog) * (s.fromRight ? 1 : -1), 0);
+    dim(1 - prog, 0);
   }, { passive: true });
   const end = () => {
     if (!s) return;
@@ -150,10 +176,12 @@ function installSwipeBack() {
     if (Math.abs(st.dx) > window.innerWidth * 0.3 || v > 0.55) {
       st.top.close(false, { swiped: true, dx: st.dx });
     } else {
-      el.style.transition = 'transform .2s ease-out';
+      el.style.transition = `transform .26s ${EASE}`;
       el.style.transform = 'translateX(0)';
+      park(prevEl, PARK * (st.fromRight ? 1 : -1), 260); dim(1, 260);
       setTimeout(() => {
         el.classList.remove('dragging'); el.style.transition = ''; el.style.transform = ''; el.style.top = '';
+        park(prevEl, 0, 0); dim(0, 0);
         prevEl.classList.remove('under'); prevEl.classList.add('hidden-page'); prevEl.style.top = '';
         window.scrollTo(0, st.y);
       }, 210);
