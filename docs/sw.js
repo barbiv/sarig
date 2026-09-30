@@ -1,4 +1,4 @@
-const V = '202609301148';
+const V = '202609301207';
 const SHELL = 'sarig-shell-' + V;
 const DATA = 'sarig-data-10233e38'; // changes whenever the song index is rebuilt, so cached chunks never mismatch
 const FONTS = 'sarig-fonts-v1';
