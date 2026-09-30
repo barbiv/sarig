@@ -58,7 +58,7 @@ export function openScreen({ cls = '', title = '', sub = '', actions = '', onClo
   el.setAttribute('aria-label', title);
   el.innerHTML = `<header class="topbar always"><div class="tb-inner">
       <button class="iconbtn back" data-back aria-label="חזרה">${icon('back')}</button>
-      <div class="ttl"><b>${esc(title)}</b><span>${esc(sub)}</span></div>
+      <div class="ttl"><b dir="auto">${esc(title)}</b><span dir="auto">${esc(sub)}</span></div>
       <div class="acts">${actions}</div></div></header><div class="sc-body"></div>`;
   el.classList.add('entering');
   pagesEl.append(el);

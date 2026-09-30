@@ -1,6 +1,6 @@
 const V = '__V__';
 const SHELL = 'sarig-shell-' + V;
-const DATA = 'sarig-data-v1';
+const DATA = 'sarig-data-__DV__'; // changes whenever the song index is rebuilt, so cached chunks never mismatch
 const FONTS = 'sarig-fonts-v1';
 const PRE = ['./', 'index.html', 'app.js?v=' + V, 'app.css?v=' + V, 'manifest.webmanifest', 'data/index.json?v=' + V, 'data/chords.json?v=' + V,
   'icons/icon-192.png', 'icons/apple-touch-icon.png'];
@@ -8,7 +8,7 @@ self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRE)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith('sarig-shell-') && k !== SHELL).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => (k.startsWith('sarig-shell-') && k !== SHELL) || (k.startsWith('sarig-data-') && k !== DATA)).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'cache-all') {

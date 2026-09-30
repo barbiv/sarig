@@ -89,11 +89,14 @@ async function boot() {
   app.openPlayer = openPlayer;
   app.openEditor = (song, opts) => openEditor(song, opts);
   app.showSongsWithChords = (basics, mode) => { go('songs'); Songs.setChordFilter(basics, mode); };
-  app.refresh = () => { mergeMine(); const t = TABS.find((x) => x.id === current); if (t && mounted.has(t.id) && t.mod.onShow) t.mod.onShow(); if (mounted.has('songs')) Songs.refresh(false); };
+  app.refresh = () => { mergeMine(); const t = TABS.find((x) => x.id === current); if (t && mounted.has(t.id) && t.mod.onShow) t.mod.onShow(); if (mounted.has('songs')) { Songs.refreshTitles(); Songs.refresh(false); } };
   const hash = location.hash.slice(1);
   const shared = /^s=(.+)$/.exec(hash);
   go(TABS.some((t) => t.id === hash) ? hash : shared ? 'songs' : st.settings.tab || 'songs');
   splash.classList.add('out'); setTimeout(() => splash.remove(), 320);
+  let reopen = null;
+  try { reopen = sessionStorage.getItem('sarig-reopen'); sessionStorage.removeItem('sarig-reopen'); } catch (e) { /* */ }
+  if (reopen && !shared) { const sg = SONGS.find((x) => x.k === reopen); if (sg) setTimeout(() => openPlayer(sg), 250); }
   if (shared) { const sg = SONGS.find((x) => x.k === decodeURIComponent(shared[1])); if (sg) setTimeout(() => openPlayer(sg), 250); else toast('השיר ששותף לא נמצא במאגר'); }
   // storage persistence + audio unlock on first interaction
   const first = () => { requestPersist(); ensureAudio(); window.removeEventListener('pointerdown', first); };

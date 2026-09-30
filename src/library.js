@@ -174,6 +174,12 @@ export async function loadSong(song) {
   const chunk = await loadChunk(Math.floor(song.id / INDEX.chunk));
   const d = chunk[song.id];
   if (!d) throw new Error('missing');
+  if (d.k && 'db:' + d.k !== song.k) { // the song list on screen is older than the downloaded data (app just updated)
+    let again = false;
+    try { again = sessionStorage.getItem('sarig-reloaded') === '1'; sessionStorage.setItem('sarig-reloaded', '1'); sessionStorage.setItem('sarig-reopen', song.k); } catch (e) { /* */ }
+    if (!again) { location.reload(); await new Promise(() => {}); }
+    throw new Error('stale');
+  }
   if (song.timed) return buildTimed(song, d);
   const bpm = pref.bpm || song.bpm || defaultBpm(song, d);
   const m = buildSymbolic(song, d, bpm);

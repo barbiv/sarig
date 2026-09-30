@@ -3,6 +3,7 @@ import { chordName, keyName, ROOTS, BASIC_SUFFIX, cidBase, basicOf } from '../th
 import { getState, update, isFav, toggleFav, songPref, save } from '../store.js';
 import { h, esc, icon, openSheet, toast, haptic } from '../ui.js';
 import { onLongPress, actionSheet } from '../polish.js';
+import { catalogMatches, openImportFor, tab4uSearch } from '../catalog.js';
 import { app } from '../app.js';
 import { importFromClipboard } from '../importer.js';
 
@@ -23,7 +24,7 @@ export function songRowHTML(s, extra = {}) {
   return `<button class="song" data-k="${esc(s.k)}" style="top:${extra.top ?? 0}px;${extra.static ? 'position:relative' : ''}">
     <span class="art${first.length > 5 ? ' xs' : first.length > 3 ? ' s' : ''}" style="background:hsl(${hue} 42% 38%)">${esc(first)}</span>
     <span class="meta"><span class="t">${esc(s.t)}</span>
-      <span class="a"><span class="ar">${esc(meta)}</span>${s.timed ? '<span class="pill sync">מסונכרן</span>' : ''}${s.mine ? '<span class="pill mine">שלי</span>' : ''}${s.curated ? '<span class="pill">בסיסי</span>' : ''}<span class="pill ${DIFF_CLS[s.diff]}">${DIFF[s.diff]}</span>${extra.capoFit ? ` <span class="pill">קאפו ${extra.capoFit}</span>` : ''}</span>
+      <span class="a"><span class="ar">${esc(meta)}</span>${s.timed ? '<span class="pill sync">מסונכרן</span>' : ''}${s.mine ? '<span class="pill mine">שלי</span>' : ''}${s.curated ? '<span class="pill">בסיסי</span>' : ''}${s.diff >= 2 && (s.flags & 16) ? '<span class="pill easyv">+ קל</span>' : ''}<span class="pill ${DIFF_CLS[s.diff]}">${DIFF[s.diff]}</span>${extra.capoFit ? ` <span class="pill">קאפו ${extra.capoFit}</span>` : ''}</span>
       <span class="cl">${chords}</span></span>
     <span class="fav" role="button" data-fav aria-label="מועדף" aria-pressed="${fav}">${icon('star', fav ? 'fill' : '')}</span></button>`;
 }
@@ -53,7 +54,9 @@ export function mount(root) {
     </div>
     <div class="resbar"><span id="sg-count"></span>
       <select id="sg-sort" aria-label="מיון"><option value="pop">פופולריים</option><option value="az">א–ת</option><option value="easy">הכי קלים</option><option value="year">חדשים</option><option value="old">ישנים</option><option value="slow">איטיים</option><option value="fast">מהירים</option></select></div>
-    <div class="songlist" id="sg-list"></div>`;
+    <div id="sg-cat"></div>
+    <div class="songlist" id="sg-list"></div>
+    <div id="sg-more"></div>`;
   listEl = el.querySelector('#sg-list');
   const q = el.querySelector('#sg-q'), qx = el.querySelector('#sg-qx');
   let qt;
@@ -73,6 +76,8 @@ export function mount(root) {
   el.querySelector('#sg-add').addEventListener('click', () => app.openEditor(null));
   el.querySelector('#sg-paste').addEventListener('click', importFromClipboard);
   listEl.addEventListener('click', onListClick);
+  el.querySelector('#sg-cat').addEventListener('click', (e) => { const b = e.target.closest('[data-ci]'); if (b) openImportFor(catShown[+b.dataset.ci]); });
+  el.querySelector('#sg-more').addEventListener('click', (e) => { if (e.target.closest('[data-t4]')) openImportFor({ t: f.q.trim(), a: '' }); });
   onLongPress(listEl, '.song', (row) => { const k = row.dataset.k; const sg = SONGS.find((x) => x.k === k); if (sg) songActions(sg, row); });
   window.addEventListener('scroll', () => { if (el.offsetParent !== null) requestAnimationFrame(paint); }, { passive: true });
   window.addEventListener('resize', paint);
@@ -154,6 +159,7 @@ export function refresh(resetScroll) {
   el.querySelectorAll('#sg-scope [data-sc]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sc === scope)));
   syncUI();
   el.querySelector('#sg-count').textContent = `${results.length.toLocaleString('he-IL')} שירים`;
+  renderExtra();
   listEl.style.height = `${Math.max(1, results.length) * ROW}px`;
   if (resetScroll) {
     const top = listEl.getBoundingClientRect().top + window.scrollY - 150;
@@ -164,6 +170,17 @@ export function refresh(resetScroll) {
   paint();
   update((s) => { const { q, ...rest } = f; s.settings.lastFilters = rest; });
 }
+let catShown = [];
+let titleSet = null;
+function renderExtra() {
+  const q = (f.q || '').trim();
+  const cat = el.querySelector('#sg-cat'), more = el.querySelector('#sg-more');
+  if (!titleSet) titleSet = new Set(SONGS.map((x) => String(x.t).toLowerCase().replace(/["'׳״]/g, '').replace(/\s+/g, ' ').trim()));
+  catShown = scope === 'all' ? catalogMatches(q, titleSet) : [];
+  cat.innerHTML = catShown.length ? `<div class="section-t">לייבוא מטאב4יו · ${catShown.length}</div><div class="rows">${catShown.map((x, i) => `<button class="row" data-ci="${i}"><span class="art-s">${icon('download')}</span><span class="grow"><span class="t">${esc(x.t)}</span><br><span class="d">${esc(x.a)}</span></span><span class="pill">ייבוא</span></button>`).join('')}</div>${results.length ? '<div class="section-t">במאגר</div>' : ''}` : '';
+  more.innerHTML = q.length >= 2 && scope === 'all' ? `<button class="row t4row" data-t4>${icon('search')}<span class="grow"><span class="t">לא מצאתם? חפשו ״${esc(q)}״ בטאב4יו</span><br><span class="d">וייבאו אותו לאפליקציה בלחיצה אחת</span></span></button>` : '';
+}
+export function refreshTitles() { titleSet = null; }
 let lastRange = '';
 function paint() {
   if (!listEl) return;

@@ -613,6 +613,12 @@ def main():
         load_symbolic(part, sub, src, fn)
         print(part, sub, len(songs) - n0)
 
+    # ---- well-known performers for standards listed under their composers (display only; keys use sid+title)
+    PERFORMER = {'what wonderful world': ('Louis Armstrong', r'weiss|thiele|louis|armstrong|^$')}
+    for s in songs:
+        p = PERFORMER.get(norm(s['title']))
+        if p and s['src'] != 'curated' and re.search(p[1], norm(s['artist'])):
+            s['artist'] = p[0]
     # ---- popularity & dedupe
     PRI = {'curated': 0, 'isophonics': 1, 'billboard': 2, 'rw': 3, 'uspop': 4, 'rockcorpus': 5, 'ireal': 6,
            'irealforum': 7, 'wikifonia': 8, 'biab': 9}
@@ -719,6 +725,7 @@ def main():
                 data['st'] = s['style']
             if s.get('capo_hint'):
                 data['ch'] = s['capo_hint']
+        data['k'] = stable_key(s)  # lets the app detect an index/chunk mismatch after a data update
         chunks[i // CHUNK][i] = data
     for c, d in chunks.items():
         with open(os.path.join(OUT, 's', '%d.json' % c), 'w') as f:

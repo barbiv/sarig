@@ -14,11 +14,11 @@ import { app } from '../app.js';
 import { chordColor } from '../colors.js';
 import { haptic } from '../ui.js';
 import { spinner } from '../polish.js';
+import { STRUMS, autoStrum, strumsFor, arrow } from '../strum.js';
 import { startMic, stopMic, matchChord, resetChroma, micSupported } from '../mic.js';
 
 const PPS = 104; // lane pixels per song-second
 const STYLES = { strum: 'סטרום', arp: 'פריטה', hit: 'אקורד לתיבה', off: 'ללא' };
-const PATTERNS = { 4: ['D', '', 'D', 'U', '', 'U', 'D', 'U'], 3: ['D', '', 'D', 'U', 'D', 'U'], 2: ['D', '', 'D', 'U'] };
 const isHeb = (s) => /[֐-׿]/.test(s || '');
 
 export async function openPlayer(song) {
@@ -71,9 +71,58 @@ export async function openPlayer(song) {
     return vs[0];
   };
 
+  // ------------------------------------------------------------ strumming pattern + easy/regular version
+  const strumKey = () => {
+    const bpbN = model.bpb === 3 || model.bpb === 2 ? model.bpb : 4;
+    return pref.strum && STRUMS[pref.strum] && STRUMS[pref.strum].bpb === bpbN ? pref.strum : autoStrum(song, model, pref.level === 'easy');
+  };
+  const pat = () => STRUMS[strumKey()].p.split('');
+  const slotChar = (k) => { const pt = pat(); return pt[k % pt.length]; };
+  // strum strip for a stretch of the song: two slots per beat, bar lines at downbeats
+  function strumHTML(t0, t1, maxW) {
+    const b0 = Math.max(0, beatAt(t0 + 0.02)), b1 = Math.max(b0 + 1, beatAt(t1 - 0.02) + 1);
+    const n = Math.min(64, (b1 - b0) * 2);
+    const beatsOnly = maxW && maxW / n < 8;
+    let out = '';
+    for (let k = 0; k < n; k++) {
+      const bi = b0 + (k >> 1);
+      let pos = 0; { let j = bi; while (j > 0 && !model.downs.has(j)) { j--; pos++; } }
+      const slot = pos * 2 + (k & 1);
+      const c = slotChar(slot);
+      if (beatsOnly && (k & 1)) continue;
+      out += `<i class="${c === 'D' ? 'd' : c === 'U' ? 'u' : 'x'}${model.downs.has(bi) && !(k & 1) ? ' bl' : ''}">${arrow(c)}</i>`;
+    }
+    return out;
+  }
+  function levelCost(simp, capo) {
+    const uniq = [...new Set(ev.filter((e) => e.c >= 0).map((e) => cidBase(simplifyCid(transposeCid(e.c, pref.tr), simp))))];
+    let sc = 0;
+    for (const cid of uniq) { const vs = voicings(transposeCid(cid, -capo)); const v = capo > 0 ? (vs.find(isOpenShape) || vs[0]) : vs[0]; sc += v ? v.diff + (isOpenShape(v) ? 0 : 3) : 10; }
+    return sc;
+  }
+  let easyCache = null;
+  function easyInfo() {
+    if (easyCache) return easyCache;
+    let best = { capo: 0, cost: Infinity };
+    for (let c = 0; c <= 7; c++) { const k = levelCost(2, c) + c * 0.3; if (k < best.cost) best = { capo: c, cost: k }; }
+    const reg = pref.reg || { simp: 0, capo: model.capoHint || 0 };
+    const regCost = levelCost(reg.simp, reg.capo);
+    easyCache = { capo: best.capo, simp: 2, has: best.cost + 0.5 < regCost };
+    return easyCache;
+  }
+  function setLevel(lv) {
+    if ((pref.level || 'reg') === lv) return;
+    const e = easyInfo();
+    if (lv === 'easy') { pref.reg = { simp: pref.simp, capo: pref.capo }; pref.simp = e.simp; pref.capo = e.capo; }
+    else { const r = pref.reg || { simp: 0, capo: model.capoHint || 0 }; pref.simp = r.simp; pref.capo = r.capo; }
+    pref.level = lv; save(); setLabel(); relabel(); haptic();
+    toast(lv === 'easy' ? `גרסה קלה: אקורדים בסיסיים${pref.capo ? ` וקאפו ${pref.capo}` : ''} · פריטה ${STRUMS[strumKey()].name}` : 'גרסה רגילה');
+  }
+
   // ------------------------------------------------------------ layout
   sc.body.innerHTML = `
-    <div class="pl-src"><div class="seg" id="pl-mode"><button data-mode="synth">${icon('guitar')} ליווי מובנה</button><button data-mode="yt">${icon('yt')} השיר המקורי</button></div>
+    <div class="pl-src"><div class="seg" id="pl-mode"><button data-mode="synth" aria-label="ליווי מובנה">${icon('guitar')} ליווי</button><button data-mode="yt" aria-label="השיר המקורי">${icon('yt')} מקורי</button></div>
+      <div class="seg" id="pl-level" hidden><button data-lv="reg">רגיל</button><button data-lv="easy">קל</button></div>
       <button class="iconbtn sm" id="pl-mic" aria-label="האזנה לנגינה" aria-pressed="false">${icon('mic')}</button>
       <button class="iconbtn sm" id="pl-view" aria-label="החלפת תצוגה"></button></div>
     <div class="pl-boxes" id="pl-boxes"></div>
@@ -198,10 +247,10 @@ export async function openPlayer(song) {
       if (l.kind === 'lyric') {
         const rtl = isHeb(l.text);
         const chips = l.chords.map((c) => `<span class="sl-ch" data-k="${c.k}" style="${rtl ? 'right' : 'left'}:${(Math.min(0.9, c.pos) * 100).toFixed(1)}%">${esc(nameOf(ev[c.k].c))}</span>`).join('');
-        return `${lab}<div class="sl lyric${rtl ? ' rtl' : ' ltr'}" data-l="${i}"><div class="sl-chords">${chips}</div><div class="sl-text">${esc(l.text)}</div></div>`;
+        return `${lab}<div class="sl lyric${rtl ? ' rtl' : ' ltr'}" data-l="${i}"><div class="sl-chords">${chips}</div><div class="sl-text">${esc(l.text)}</div><div class="sl-strum">${strumHTML(l.t0, l.t1, 330)}</div></div>`;
       }
       return `${lab}<div class="sl bars" data-l="${i}" style="grid-template-columns:repeat(${Math.max(2, l.bars.length)},1fr)">${l.bars.map((b) => `<div class="bar" data-a="${b.a}">
-        ${b.cs.map((k) => `<b data-k="${k}">${esc(nameOf(ev[k].c))}</b>`).join('') || '<b class="rep">%</b>'}<span class="sl-sl">${'/ '.repeat(Math.max(0, Math.min(8, b.nb - b.cs.length))).trim()}</span><i class="bf"></i></div>`).join('')}</div>`;
+        ${b.cs.map((k) => `<b data-k="${k}">${esc(nameOf(ev[k].c))}</b>`).join('') || '<b class="rep">%</b>'}<span class="sl-st">${strumHTML(b.a, b.b)}</span><i class="bf"></i></div>`).join('')}</div>`;
     }).join('');
     stage.innerHTML = `<div class="sheetview" id="pl-sheet"><div class="sv-pad"></div>${html || '<div class="empty">אין נתונים לשיר הזה</div>'}<div class="sv-pad end"></div></div>`;
     const sv = stage.querySelector('#pl-sheet');
@@ -389,13 +438,14 @@ export async function openPlayer(song) {
     stageWrap.classList.toggle('nl', rtlSong);
     const lyr = stage.querySelector('#stg-lyr'), rowsEl = stage.querySelector('#stg-rows');
     const W = lyr.clientWidth || 240, PAD = 14, avail = W - PAD * 2;
-    const ROWH = Math.max(96, Math.min(132, (lyr.clientHeight || 420) / 3.4));
+    const ROWH = Math.max(112, Math.min(140, (lyr.clientHeight || 420) / 3.3));
     let html = '';
     lines.forEach((l, i) => {
       const dir = l.kind === 'lyric' ? (isHeb(l.text) ? 'rtl' : 'ltr') : (rtlSong ? 'rtl' : 'ltr');
       const content = l.kind === 'lyric' ? `<span class="sw">${esc(l.text)}</span>`
-        : `<span class="sbars">${l.bars.map((b) => `<span class="sbar">${Array.from({ length: Math.max(1, Math.min(8, b.nb)) }, () => '<i></i>').join('')}</span>`).join('')}</span>`;
-      html += `<div class="srow ${l.kind}" data-l="${i}" dir="${dir}" style="top:${i * ROWH}px;height:${ROWH}px">${l.label ? `<em class="slab">${esc(l.label)}</em>` : ''}<div class="sbubs"></div><div class="stx">${content}</div></div>`;
+        : `<span class="sbars">${l.bars.map((b) => `<span class="sbar">${strumHTML(b.a, b.b)}</span>`).join('')}</span>`;
+      const strip = l.kind === 'lyric' ? `<div class="sstrum">${strumHTML(l.t0, l.t1, avail)}</div>` : '';
+      html += `<div class="srow ${l.kind}" data-l="${i}" dir="${dir}" style="top:${i * ROWH}px;height:${ROWH}px">${l.label ? `<em class="slab">${esc(l.label)}</em>` : ''}<div class="sbubs"></div><div class="stx">${content}</div>${strip}</div>`;
     });
     rowsEl.innerHTML = html || '<div class="empty" style="color:#bbb">אין נתונים לשיר הזה</div>';
     const rows = [...rowsEl.querySelectorAll('.srow')];
@@ -409,6 +459,8 @@ export async function openPlayer(song) {
         let ww = sw.offsetWidth;
         if (ww > avail) { fs = Math.max(16, Math.floor(fs * avail / ww)); sw.style.fontSize = fs + 'px'; ww = sw.offsetWidth; }
         w = Math.max(40, Math.min(avail, ww));
+        const ss = row.querySelector('.sstrum');
+        if (ss) { ss.style.width = w + 'px'; ss.style[row.getAttribute('dir') === 'rtl' ? 'right' : 'left'] = PAD + 'px'; }
       } else row.querySelector('.sbars').style.width = avail + 'px';
       // chord bubbles at their positions along the line
       const chords = l.kind === 'lyric' ? l.chords.map((c) => ({ k: c.k, pos: c.pos }))
@@ -435,7 +487,7 @@ export async function openPlayer(song) {
       wr.forEach((x, q) => { x.style[side] = xs[q].toFixed(1) + 'px'; });
       return { row, w, rtl: side === 'right', bubs: [...row.querySelectorAll('.bwrap')] };
     });
-    meta.forEach((m) => { m.beats = [...m.row.querySelectorAll('.sbar i')]; });
+    meta.forEach((m) => { m.beats = [...m.row.querySelectorAll('.sbar i, .sstrum i')]; });
     S.stg = { lyr, rowsEl, rows, meta, ROWH, W, PAD, cur: -2, bub: null, lastC: -9, nx: -9,
       head: lyr.querySelector('#stg-head'), band: lyr.querySelector('#stg-band'), pf: stage.querySelector('#stg-pf'), name: stage.querySelector('#stg-name'), nxEl: stage.querySelector('#stg-nx'), lastBeat: -1 };
     stage.querySelector('.stg-bpm').addEventListener('click', (e) => {
@@ -474,7 +526,7 @@ export async function openPlayer(song) {
       band.classList.toggle('rtl', M.rtl);
       M.row.style.setProperty('--p', (p * 100).toFixed(1) + '%');
       const beatsEl = M.beats;
-      if (beatsEl.length) { const n = beatsEl.length, on = Math.floor(p * n); if (on !== G.lastBeat || force) { G.lastBeat = on; beatsEl.forEach((b, k) => b.classList.toggle('on', k <= on)); } }
+      if (beatsEl.length) { const n = beatsEl.length, on = Math.floor(p * n); if (on !== G.lastBeat || force) { G.lastBeat = on; beatsEl.forEach((b, k) => { b.classList.toggle('on', k === on); b.classList.toggle('done', k < on); }); } }
     }
     // current chord bubble pulse + neck + next
     const e = ev[i];
@@ -528,10 +580,9 @@ export async function openPlayer(song) {
       const capo = pref.capo;
       const style = sets.sound;
       if (style === 'strum') {
-        const pat = PATTERNS[model.bpb] || PATTERNS[4];
-        const bpb = model.bpb || 4;
-        const p = posInBar % bpb;
-        const d1 = pat[p * 2], d2 = pat[p * 2 + 1];
+        const p = posInBar;
+        const r1 = slotChar(p * 2), r2 = slotChar(p * 2 + 1);
+        const d1 = r1 === '.' ? '' : r1, d2 = r2 === '.' ? '' : r2;
         if (d1 && v1) strum(v1, at(bt), { dir: d1, vel: isDown ? 0.95 : 0.78, capo });
         if (d2 && v2 && half < loopEnd) strum(v2, at(half), { dir: d2, vel: 0.7, capo });
       } else if (style === 'arp') {
@@ -687,7 +738,12 @@ export async function openPlayer(song) {
             const f = B ? Math.max(0, Math.min(1, (tt - B.a) / (B.b - B.a))) : 0;
             b.querySelector('.bf').style.width = (f * 100).toFixed(1) + '%';
             b.classList.toggle('now', f > 0 && f < 1);
+            const ar = b.querySelectorAll('.sl-st i'); const n = ar.length;
+            ar.forEach((x, k) => x.classList.toggle('on', f > 0 && f < 1 && Math.floor(f * n) === k));
           });
+        } else {
+          const ar = el2.querySelectorAll('.sl-strum i'); const n = ar.length, on = Math.floor(p * n);
+          if (el2._on !== on) { el2._on = on; ar.forEach((x, k) => { x.classList.toggle('on', k === on); x.classList.toggle('done', k < on); }); }
         }
       }
       const chip = S.chipEls && S.chipEls.get(i);
@@ -748,11 +804,11 @@ export async function openPlayer(song) {
     if (dots.childElementCount !== nb) dots.innerHTML = Array.from({ length: nb }, (_, k) => `<i class="${k === 0 ? 'down' : ''}"></i>`).join('');
     [...dots.children].forEach((d, k) => d.classList.toggle('on', (playing || force) && bi >= 0 && k === pos % nb));
     const sp = $('#pl-strum');
-    const pat = PATTERNS[nb] || PATTERNS[4];
-    if (sp.childElementCount !== pat.length) sp.innerHTML = pat.map((d) => `<i class="${d ? d.toLowerCase() : 'x'}">${d === 'D' ? '↓' : d === 'U' ? '↑' : '·'}</i>`).join('');
+    const pt = pat();
+    if (sp.dataset.p !== pt.join('')) { sp.dataset.p = pt.join(''); sp.innerHTML = pt.map((d) => `<i class="${d === 'D' ? 'd' : d === 'U' ? 'u' : 'x'}">${arrow(d)}</i>`).join(''); }
     if (bi >= 0) {
       const b0 = model.beats[bi], b1 = model.beats[bi + 1] ?? b0 + 0.5;
-      const eighth = (pos % nb) * 2 + ((tt - b0) > (b1 - b0) / 2 ? 1 : 0);
+      const eighth = (pos * 2 + ((tt - b0) > (b1 - b0) / 2 ? 1 : 0)) % pt.length;
       [...sp.children].forEach((x, k) => x.classList.toggle('on', playing && k === eighth));
     }
     const now = performance.now();
@@ -862,8 +918,11 @@ export async function openPlayer(song) {
     $('#pl-set-l').textContent = parts.join(' · ') || 'הגדרות';
     $('#pl-metro').setAttribute('aria-pressed', String(!!getState().settings.metronome));
     sc.body.querySelectorAll('#pl-mode [data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === pref.mode)));
+    const lvl = $('#pl-level');
+    lvl.hidden = !easyInfo().has && pref.level !== 'easy';
+    lvl.querySelectorAll('[data-lv]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lv === (pref.level || 'reg'))));
   }
-  function relabel() { buildStage(); }
+  function relabel() { easyCache = null; buildStage(); }
   function openSettings() {
     const body = h('<div class="plset"></div>');
     const draw = () => {
@@ -875,6 +934,8 @@ export async function openPlayer(song) {
         <button class="btn sm ghost block" data-best style="margin-bottom:10px">קאפו מומלץ לשיר הזה</button>
         <div class="setrow"><span>טרנספוז (חצאי טונים)</span><span class="stepper"><button data-q="tr:-1">−</button><output>${pref.tr > 0 ? '+' + pref.tr : pref.tr}</output><button data-q="tr:1">+</button></span></div>
         <div class="setrow"><span>פישוט אקורדים</span><div class="seg" style="width:190px">${['מלא', 'בינוני', 'בסיסי'].map((n, k) => `<button data-simp="${k}" aria-pressed="${pref.simp === k}">${n}</button>`).join('')}</div></div>
+        <div class="section-t">דפוס פריטה (סטרומינג)</div>
+        <div class="chips wrap strumpick">${[['', 'אוטומטי', STRUMS[autoStrum(song, model, pref.level === 'easy')].p]].concat(strumsFor(model.bpb).map(([k, x]) => [k, x.name, x.p])).map(([k, n, pp]) => `<button class="chip${(pref.strum || '') === k ? '' : ' outline'}" data-strum="${k}" aria-pressed="${(pref.strum || '') === k}"><span>${n}</span><b class="ltr">${pp.split('').map(arrow).join('')}</b></button>`).join('')}</div>
         <div class="section-t">ליווי מובנה</div>
         <div class="seg" style="margin-bottom:10px">${Object.entries(STYLES).map(([k, n]) => `<button data-snd="${k}" aria-pressed="${s.sound === k}">${n}</button>`).join('')}</div>
         <div class="rows">
@@ -899,9 +960,10 @@ export async function openPlayer(song) {
       } else if (d.rate) { pref.tempo = +d.rate; retime(); }
       else if (b.hasAttribute('data-best')) { pref.capo = bestCapo(); relabel(); toast(pref.capo ? `קאפו ${pref.capo} — הכי הרבה אקורדים פתוחים` : 'בלי קאפו זה כבר הכי נוח'); }
       else if (d.simp) { pref.simp = +d.simp; relabel(); }
+      else if (d.strum != null) { pref.strum = d.strum || null; relabel(); }
       else if (d.snd) { update((s) => { s.settings.sound = d.snd; }); muteAll(); }
       else if (d.bpm) { const nb = Math.max(40, Math.min(260, Math.round(model.bpm) + +d.bpm)); pref.bpm = nb; pause(); rebuildSymbolic(nb); }
-      else if (b.hasAttribute('data-reset')) { pref.tr = 0; pref.capo = 0; pref.tempo = 1; pref.simp = 0; retime(); relabel(); }
+      else if (b.hasAttribute('data-reset')) { pref.tr = 0; pref.capo = 0; pref.tempo = 1; pref.simp = 0; pref.level = 'reg'; pref.reg = null; pref.strum = null; retime(); relabel(); }
       else return;
       save(); setLabel(); draw();
     });
@@ -931,6 +993,7 @@ export async function openPlayer(song) {
     buildStage(); haptic();
     toast('תצוגה: ' + VIEW_NAME[pref.view]);
   });
+  $('#pl-level').addEventListener('click', (e) => { const b = e.target.closest('[data-lv]'); if (b) setLevel(b.dataset.lv); });
   $('#pl-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (!b || b.dataset.mode === pref.mode) return; setMode(b.dataset.mode); });
   sc.el.querySelector('[data-fav]').addEventListener('click', (e) => {
     const on = toggleFav(song.k); const b = e.currentTarget; b.innerHTML = icon('star', on ? 'fill' : ''); b.style.color = on ? 'var(--accent)' : 'inherit'; haptic();
